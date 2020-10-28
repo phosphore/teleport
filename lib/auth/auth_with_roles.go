@@ -427,6 +427,13 @@ func (a *ServerWithRoles) KeepAliveServer(ctx context.Context, handle services.K
 		if err := a.action(defaults.Namespace, services.KindAppServer, services.VerbUpdate); err != nil {
 			return trace.Wrap(err)
 		}
+	case teleport.KeepAliveDatabase:
+		if !a.hasBuiltinRole(string(teleport.RoleDatabase)) {
+			return trace.AccessDenied("access denied")
+		}
+		if err := a.action(defaults.Namespace, services.KindDatabaseServer, services.VerbUpdate); err != nil {
+			return trace.Wrap(err)
+		}
 	default:
 		return trace.BadParameter("unknown keep alive type %q", handle.Type)
 	}
@@ -474,6 +481,10 @@ func (a *ServerWithRoles) NewWatcher(ctx context.Context, watch services.Watch) 
 			}
 		case services.KindRemoteCluster:
 			if err := a.action(defaults.Namespace, services.KindRemoteCluster, services.VerbRead); err != nil {
+				return nil, trace.Wrap(err)
+			}
+		case services.KindDatabaseServer:
+			if err := a.action(defaults.Namespace, services.KindDatabaseServer, services.VerbRead); err != nil {
 				return nil, trace.Wrap(err)
 			}
 		default:
@@ -1108,6 +1119,7 @@ func (a *ServerWithRoles) GenerateUserCerts(ctx context.Context, req proto.UserC
 		overrideRoleTTL:   a.hasBuiltinRole(string(teleport.RoleAdmin)),
 		routeToCluster:    req.RouteToCluster,
 		kubernetesCluster: req.KubernetesCluster,
+		dbName:            req.RouteToDatabase,
 		checker:           checker,
 		traits:            traits,
 		activeRequests: services.RequestIDs{
@@ -1998,6 +2010,87 @@ func (a *ServerWithRoles) ProcessKubeCSR(req KubeCSR) (*KubeCSRResponse, error) 
 		return nil, trace.AccessDenied("this request can be only executed by a proxy")
 	}
 	return a.authServer.ProcessKubeCSR(req)
+}
+
+// GetDatabaseServers returns all registered database servers.
+func (a *ServerWithRoles) GetDatabaseServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.Server, error) {
+	if err := a.action(namespace, services.KindDatabaseServer, services.VerbList); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if err := a.action(namespace, services.KindDatabaseServer, services.VerbRead); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	servers, err := a.authServer.GetDatabaseServers(ctx, namespace, opts...)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	// Filter out databases the caller doesn't have access to from each server.
+	for _, server := range servers {
+		filtered := make([]*services.Database, 0, len(server.GetDatabases()))
+		for _, database := range server.GetDatabases() {
+			err := a.context.Checker.CheckAccessToDatabaseService(server.GetNamespace(), database)
+			if err != nil && !trace.IsAccessDenied(err) {
+				return nil, trace.Wrap(err)
+			} else if err == nil {
+				filtered = append(filtered, database)
+			}
+		}
+		server.SetDatabases(filtered)
+	}
+	return servers, nil
+}
+
+// UpsertDatabaseServer creates or updates a new database proxy server.
+func (a *ServerWithRoles) UpsertDatabaseServer(ctx context.Context, server services.Server) (*services.KeepAlive, error) {
+	if err := a.action(server.GetNamespace(), services.KindDatabaseServer, services.VerbCreate); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if err := a.action(server.GetNamespace(), services.KindDatabaseServer, services.VerbUpdate); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return a.authServer.UpsertDatabaseServer(ctx, server)
+}
+
+// DeleteDatabaseServer removes the specified database proxy server.
+func (a *ServerWithRoles) DeleteDatabaseServer(ctx context.Context, namespace string, name string) error {
+	if err := a.action(namespace, services.KindDatabaseServer, services.VerbDelete); err != nil {
+		return trace.Wrap(err)
+	}
+	return a.authServer.DeleteAppServer(ctx, namespace, name)
+}
+
+// DeleteAllDatabaseServers removes all registered database proxy servers.
+func (a *ServerWithRoles) DeleteAllDatabaseServers(ctx context.Context, namespace string) error {
+	if err := a.action(namespace, services.KindDatabaseServer, services.VerbList); err != nil {
+		return trace.Wrap(err)
+	}
+	if err := a.action(namespace, services.KindDatabaseServer, services.VerbDelete); err != nil {
+		return trace.Wrap(err)
+	}
+	return a.authServer.DeleteAllAppServers(ctx, namespace)
+}
+
+// SignDatabaseCSR generates a client certificate used by proxy when talking
+// to a remote database service.
+func (a *ServerWithRoles) SignDatabaseCSR(ctx context.Context, req *proto.DatabaseCSRRequest) (*proto.DatabaseCSRResponse, error) {
+	// Only proxy is allowed to request this certificate when proxying
+	// database client connection to a remote database service.
+	if !a.hasBuiltinRole(string(teleport.RoleProxy)) {
+		return nil, trace.AccessDenied("this request can only be executed by a proxy service")
+	}
+	return a.authServer.SignDatabaseCSR(ctx, req)
+}
+
+// GenerateDatabaseCert generates a certificate used by a database
+// to authenticate with the database instance
+func (a *ServerWithRoles) GenerateDatabaseCert(ctx context.Context, req *proto.DatabaseCertRequest) (*proto.DatabaseCertResponse, error) {
+	// This certificate can be requested only by a database service when
+	// initiating connection to a database instance, or by an admin when
+	// generating certificates for a database instance.
+	if !a.hasBuiltinRole(string(teleport.RoleDatabase)) && !a.hasBuiltinRole(string(teleport.RoleAdmin)) {
+		return nil, trace.AccessDenied("this request can only be executed by a database service or an admin")
+	}
+	return a.authServer.GenerateDatabaseCert(ctx, req)
 }
 
 // GetAppServers gets all application servers.

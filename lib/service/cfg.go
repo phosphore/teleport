@@ -91,6 +91,9 @@ type Config struct {
 	// App service configuration. Manages applications running within the cluster.
 	Apps AppsConfig
 
+	// Databases proxy service configuration.
+	Databases DatabasesConfig
+
 	// Keygen points to a key generator implementation
 	Keygen sshca.Authority
 
@@ -503,6 +506,56 @@ type KubeConfig struct {
 	Limiter limiter.Config
 }
 
+// DatabasesConfig configures the database proxy service.
+type DatabasesConfig struct {
+	// Enabled enables the database proxy service.
+	Enabled bool
+	// Database is a list of databases proxied by this service.
+	Databases []Database
+}
+
+// Database represents a single database that's being proxied.
+type Database struct {
+	// Name is the database name, used to refer to in CLI.
+	Name string
+	// Description is a free-form database description.
+	Description string
+	// Protocol is the database type, e.g. postgres or mysql.
+	Protocol string
+	// URI is the database endpoint to connect to.
+	URI string
+	// StaticLabels is a map of database static labels.
+	StaticLabels map[string]string
+	// DynamicLabels is a list of database dynamic labels.
+	DynamicLabels services.CommandLabels
+	// CACert is an optional database CA certificate.
+	CACert []byte
+	// AWS contains AWS specific settings for RDS/Aurora.
+	AWS DatabaseAWS
+}
+
+// DatabaseAWS contains AWS specific settings for RDS/Aurora databases.
+type DatabaseAWS struct {
+	// Region is the cloud region database is running in when using AWS RDS.
+	Region string
+}
+
+// Check validates the database proxy configuration.
+func (d *Database) Check() error {
+	if d.Name == "" {
+		return trace.BadParameter("empty database name")
+	}
+	if !utils.SliceContainsStr(defaults.DatabaseProtocols, d.Protocol) {
+		return trace.BadParameter("unsupported database %q protocol %q, supported are: %v",
+			d.Name, d.Protocol, defaults.DatabaseProtocols)
+	}
+	if _, _, err := net.SplitHostPort(d.URI); err != nil {
+		return trace.BadParameter("invalid database %q address %q: %v",
+			d.Name, d.URI, err)
+	}
+	return nil
+}
+
 // AppsConfig configures application proxy service.
 type AppsConfig struct {
 	// Enabled enables application proxying service.
@@ -658,6 +711,9 @@ func ApplyDefaults(cfg *Config) {
 
 	// Apps service defaults. It's disabled by default.
 	cfg.Apps.Enabled = false
+
+	// Databases proxy service is disabled by default.
+	cfg.Databases.Enabled = false
 }
 
 // ApplyFIPSDefaults updates default configuration to be FedRAMP/FIPS 140-2

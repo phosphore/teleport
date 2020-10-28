@@ -317,6 +317,13 @@ const (
 	// AppSessionRequestCode is the application request/response code.
 	AppSessionRequestCode = "T2009I"
 
+	// DatabaseSessioStartCode is the database session start event code.
+	DatabaseSessionStartCode = "TDB00I"
+	// DatabaseSessionEndCode is the database session end event code.
+	DatabaseSessionEndCode = "TDB01I"
+	// DatabaseQueryCode is the database query event code.
+	DatabaseQueryCode = "TDB02I"
+
 	// SubsystemCode is the subsystem event code.
 	SubsystemCode = "T3001I"
 	// SubsystemFailureCode is the subsystem failure event code.

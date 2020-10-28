@@ -381,6 +381,18 @@ func ToOneOf(in AuditEvent) (*OneOf, error) {
 		out.Event = &OneOf_AppSessionRequest{
 			AppSessionRequest: e,
 		}
+	case *DatabaseSessionStart:
+		out.Event = &OneOf_DatabaseSessionStart{
+			DatabaseSessionStart: e,
+		}
+	case *DatabaseSessionEnd:
+		out.Event = &OneOf_DatabaseSessionEnd{
+			DatabaseSessionEnd: e,
+		}
+	case *DatabaseQuery:
+		out.Event = &OneOf_DatabaseQuery{
+			DatabaseQuery: e,
+		}
 	default:
 		return nil, trace.BadParameter("event type %T is not supported", in)
 	}
@@ -466,6 +478,12 @@ func FromOneOf(in OneOf) (AuditEvent, error) {
 	} else if e := in.GetAppSessionChunk(); e != nil {
 		return e, nil
 	} else if e := in.GetAppSessionRequest(); e != nil {
+		return e, nil
+	} else if e := in.GetDatabaseSessionStart(); e != nil {
+		return e, nil
+	} else if e := in.GetDatabaseSessionEnd(); e != nil {
+		return e, nil
+	} else if e := in.GetDatabaseQuery(); e != nil {
 		return e, nil
 	} else {
 		if in.Event == nil {

@@ -208,6 +208,10 @@ type Config struct {
 	// cluster every time) but unspecified logic.
 	KubernetesCluster string
 
+	// DatabaseName specifies name of the database proxy server to issue
+	// certificate for.
+	DatabaseName string
+
 	// LocalForwardPorts are the local ports tsh listens on for port forwarding
 	// (parameters to -L ssh flag).
 	LocalForwardPorts ForwardedPorts
@@ -294,6 +298,12 @@ func MakeDefaultConfig() *Config {
 // ProfileStatus combines metadata from the logged in profile and associated
 // SSH certificate.
 type ProfileStatus struct {
+	// Name is the profile name.
+	Name string
+
+	// Dir is the directory where profile is located.
+	Dir string
+
 	// ProxyURL is the URL the web client is accessible at.
 	ProxyURL url.URL
 
@@ -319,6 +329,9 @@ type ProfileStatus struct {
 	// KubeGroups are the kubernetes groups used by this profile.
 	KubeGroups []string
 
+	// Databases are the database the user is logged into.
+	Databases []string
+
 	// ValidUntil is the time at which this SSH certificate will expire.
 	ValidUntil time.Time
 
@@ -339,6 +352,31 @@ type ProfileStatus struct {
 // IsExpired returns true if profile is not expired yet
 func (p *ProfileStatus) IsExpired(clock clockwork.Clock) bool {
 	return p.ValidUntil.Sub(clock.Now()) <= 0
+}
+
+// CACertPath returns path to the CA certificate for this profile.
+//
+// It's kept in ~/.tsh/keys/<proxy>/certs.pem.
+func (p *ProfileStatus) CACertPath() string {
+	return filepath.Join(p.Dir, sessionKeyDir, p.Name, fileNameTLSCerts)
+}
+
+// KeyPath returns path to the private key for this profile.
+//
+// It's kept in ~/.tsh/keys/<proxy>/<user>.
+func (p *ProfileStatus) KeyPath() string {
+	return filepath.Join(p.Dir, sessionKeyDir, p.Name, p.Username)
+}
+
+// DatabaseCertPath returns path to the specified database access certificate
+// for this profile.
+//
+// It's kept in ~/.tsh/keys/<proxy>/<user>-db/<cluster>/<name>-x509.pem
+func (p *ProfileStatus) DatabaseCertPath(name string) string {
+	return filepath.Join(p.Dir, sessionKeyDir, p.Name,
+		fmt.Sprintf("%v%v", p.Username, dbDirSuffix),
+		p.Cluster,
+		fmt.Sprintf("%v%v", name, fileExtTLSCert))
 }
 
 // RetryWithRelogin is a helper error handling method,
@@ -402,7 +440,7 @@ func readProfile(profileDir string, profileName string) (*ProfileStatus, error) 
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	key, err := store.GetKey(profile.Name(), profile.Username, WithKubeCerts(profile.SiteName))
+	key, err := store.GetKey(profile.Name(), profile.Username, WithKubeCerts(profile.SiteName), WithDBCerts(profile.SiteName, ""))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -483,7 +521,24 @@ func readProfile(profileDir string, profileName string) (*ProfileStatus, error) 
 		return nil, trace.Wrap(err)
 	}
 
+	dbCerts, err := key.DBTLSCertificates()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	var databases []string
+	for _, cert := range dbCerts {
+		tlsID, err := tlsca.FromSubject(cert.Subject, time.Time{})
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		if tlsID.RouteToDatabase.DatabaseName != "" {
+			databases = append(databases, tlsID.RouteToDatabase.DatabaseName)
+		}
+	}
+
 	return &ProfileStatus{
+		Name: profileName,
+		Dir:  profileDir,
 		ProxyURL: url.URL{
 			Scheme: "https",
 			Host:   profile.WebProxyAddr,
@@ -500,6 +555,7 @@ func readProfile(profileDir string, profileName string) (*ProfileStatus, error) 
 		KubeCluster:    tlsID.KubernetesCluster,
 		KubeUsers:      tlsID.KubernetesUsers,
 		KubeGroups:     tlsID.KubernetesGroups,
+		Databases:      databases,
 	}, nil
 }
 
@@ -1500,6 +1556,26 @@ func (tc *TeleportClient) ListAppServers(ctx context.Context) ([]services.Server
 	return proxyClient.GetAppServers(ctx, tc.Namespace)
 }
 
+// ListDatabaseServers returns all registered database proxy servers.
+func (tc *TeleportClient) ListDatabaseServers(ctx context.Context) ([]services.Server, error) {
+	proxyClient, err := tc.ConnectToProxy(ctx)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	defer proxyClient.Close()
+	return proxyClient.GetDatabaseServers(ctx, tc.Namespace)
+}
+
+// ListDatabaseServersFor returns all servers that proxy the specified database.
+func (tc *TeleportClient) ListDatabaseServersFor(ctx context.Context, dbName string) ([]services.Server, error) {
+	proxyClient, err := tc.ConnectToProxy(ctx)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	defer proxyClient.Close()
+	return proxyClient.GetDatabaseServersFor(ctx, tc.Namespace, dbName)
+}
+
 // ListAllNodes is the same as ListNodes except that it ignores labels.
 func (tc *TeleportClient) ListAllNodes(ctx context.Context) ([]services.Server, error) {
 	proxyClient, err := tc.ConnectToProxy(ctx)
@@ -1713,11 +1789,20 @@ func (tc *TeleportClient) Logout() error {
 	if tc.localAgent == nil {
 		return nil
 	}
-	if err := tc.localAgent.DeleteKey(WithKubeCerts(tc.SiteName)); err != nil {
+	if err := tc.localAgent.DeleteKey(WithKubeCerts(tc.SiteName), WithDBCerts(tc.SiteName, "")); err != nil {
 		return trace.Wrap(err)
 	}
 
 	return nil
+}
+
+// LogoutDatabase removes certificate for a particular database.
+func (tc *TeleportClient) LogoutDatabase(dbName string) error {
+	if tc.localAgent == nil {
+		return nil
+	}
+	return tc.localAgent.keyStore.DeleteKeyOption(tc.localAgent.proxyHost,
+		tc.localAgent.username, WithDBCerts(tc.SiteName, dbName))
 }
 
 // LogoutAll removes all certificates for all users from the filesystem
@@ -1803,6 +1888,9 @@ func (tc *TeleportClient) Login(ctx context.Context) (*Key, error) {
 	key.TLSCert = response.TLSCert
 	if tc.KubernetesCluster != "" {
 		key.KubeTLSCerts[tc.KubernetesCluster] = response.TLSCert
+	}
+	if tc.DatabaseName != "" {
+		key.DBTLSCerts[tc.DatabaseName] = response.TLSCert
 	}
 	key.ProxyHost = webProxyHost
 	key.TrustedCA = response.HostSigners
@@ -2155,6 +2243,7 @@ func (tc *TeleportClient) directLogin(ctx context.Context, secondFactorType stri
 			Compatibility:     tc.CertificateFormat,
 			RouteToCluster:    tc.SiteName,
 			KubernetesCluster: tc.KubernetesCluster,
+			RouteToDatabase:   tc.DatabaseName,
 		},
 		User:     tc.Config.Username,
 		Password: password,
@@ -2178,6 +2267,7 @@ func (tc *TeleportClient) ssoLogin(ctx context.Context, connectorID string, pub 
 			Compatibility:     tc.CertificateFormat,
 			RouteToCluster:    tc.SiteName,
 			KubernetesCluster: tc.KubernetesCluster,
+			RouteToDatabase:   tc.DatabaseName,
 		},
 		ConnectorID: connectorID,
 		Protocol:    protocol,
@@ -2210,6 +2300,7 @@ func (tc *TeleportClient) u2fLogin(ctx context.Context, pub []byte) (*auth.SSHLo
 			Compatibility:     tc.CertificateFormat,
 			RouteToCluster:    tc.SiteName,
 			KubernetesCluster: tc.KubernetesCluster,
+			RouteToDatabase:   tc.DatabaseName,
 		},
 		User:     tc.Config.Username,
 		Password: password,

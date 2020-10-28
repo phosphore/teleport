@@ -293,6 +293,7 @@ func (s *localSite) getConn(params DialParams) (conn net.Conn, useTunnel bool, e
 		if params.ConnType == services.AppTunnel {
 			return nil, false, trace.ConnectionProblem(err, "failed to connect to application")
 		}
+		// TODO(r0mant): Add databases here too?
 
 		// This node can only be reached over a tunnel, don't attempt to dial
 		// remotely.

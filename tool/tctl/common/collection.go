@@ -477,3 +477,45 @@ func (a *appCollection) toMarshal() interface{} {
 func (a *appCollection) writeYAML(w io.Writer) error {
 	return utils.WriteYAML(w, a.toMarshal())
 }
+
+type dbCollection struct {
+	servers []services.Server
+}
+
+func (c *dbCollection) resources() (r []services.Resource) {
+	for _, resource := range c.servers {
+		r = append(r, resource)
+	}
+	return r
+}
+
+func (c *dbCollection) writeText(w io.Writer) error {
+	// TODO(r0mant): Add Labels field here as Apps do.
+	t := asciitable.MakeTable([]string{"Name", "Protocol", "Address"})
+	for _, server := range c.servers {
+		for _, db := range server.GetDatabases() {
+			t.AddRow([]string{
+				db.Name, db.Protocol, db.URI,
+			})
+		}
+	}
+	_, err := t.AsBuffer().WriteTo(w)
+	return trace.Wrap(err)
+}
+
+func (c *dbCollection) writeJSON(w io.Writer) error {
+	data, err := json.MarshalIndent(c.toMarshal(), "", "    ")
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	_, err = w.Write(data)
+	return trace.Wrap(err)
+}
+
+func (c *dbCollection) toMarshal() interface{} {
+	return c.servers
+}
+
+func (c *dbCollection) writeYAML(w io.Writer) error {
+	return utils.WriteYAML(w, c.toMarshal())
+}

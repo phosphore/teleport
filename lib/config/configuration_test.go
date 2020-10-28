@@ -293,6 +293,20 @@ func TestConfigReading(t *testing.T) {
 				},
 			},
 		},
+		Databases: Databases{
+			Service: Service{
+				EnabledFlag: "yes",
+			},
+			Databases: []*Database{
+				{
+					Name:          "postgres",
+					Protocol:      defaults.ProtocolPostgres,
+					URI:           "localhost:5432",
+					StaticLabels:  Labels,
+					DynamicLabels: CommandLabels,
+				},
+			},
+		},
 	}, cmp.AllowUnexported(Service{})))
 	require.True(t, conf.Auth.Configured())
 	require.True(t, conf.Auth.Enabled())
@@ -304,6 +318,8 @@ func TestConfigReading(t *testing.T) {
 	require.True(t, conf.Kube.Enabled())
 	require.True(t, conf.Apps.Configured())
 	require.True(t, conf.Apps.Enabled())
+	require.True(t, conf.Databases.Configured())
+	require.True(t, conf.Databases.Enabled())
 
 	// good config from file
 	conf, err = ReadFromFile(testConfigs.configFileStatic)
@@ -522,6 +538,7 @@ func (s *ConfigTestSuite) TestApplyConfigNoneEnabled(c *check.C) {
 	c.Assert(cfg.SSH.Enabled, check.Equals, false)
 	c.Assert(cfg.SSH.PublicAddrs, check.HasLen, 0)
 	c.Assert(cfg.Apps.Enabled, check.Equals, false)
+	c.Assert(cfg.Databases.Enabled, check.Equals, false)
 }
 
 func (s *ConfigTestSuite) TestBackendDefaults(c *check.C) {
@@ -824,6 +841,18 @@ func makeConfigFixture() string {
 			Name:          "foo",
 			URI:           "http://127.0.0.1:8080",
 			PublicAddr:    "foo.example.com",
+			StaticLabels:  Labels,
+			DynamicLabels: CommandLabels,
+		},
+	}
+
+	// Database service.
+	conf.Databases.EnabledFlag = "yes"
+	conf.Databases.Databases = []*Database{
+		{
+			Name:          "postgres",
+			Protocol:      defaults.ProtocolPostgres,
+			URI:           "localhost:5432",
 			StaticLabels:  Labels,
 			DynamicLabels: CommandLabels,
 		},
@@ -1199,5 +1228,80 @@ func (s *ConfigTestSuite) TestAppsCLF(c *check.C) {
 		}
 		c.Assert(cfg.Apps.Enabled, check.Equals, true)
 		c.Assert(cfg.Apps.Apps, check.HasLen, 1)
+	}
+}
+
+func TestDatabasesConfig(t *testing.T) {
+	tests := []struct {
+		inConfigString string
+		desc           string
+		outError       bool
+	}{
+		{
+			desc: "valid database config",
+			inConfigString: `
+db_service:
+  enabled: true
+  databases:
+  - name: foo
+    protocol: postgres
+    uri: localhost:5432
+    static_labels:
+      env: test
+    dynamic_labels:
+    - name: arch
+      command: ["uname", "-p"]
+      period: 1h
+`,
+			outError: false,
+		},
+		{
+			desc: "missing database name",
+			inConfigString: `
+db_service:
+  enabled: true
+  databases:
+  - protocol: postgres
+    uri: localhost:5432
+`,
+			outError: true,
+		},
+		{
+			desc: "unsupported database protocol",
+			inConfigString: `
+db_service:
+  enabled: true
+  databases:
+  - name: foo
+    protocol: unknown
+    uri: localhost:5432
+`,
+			outError: true,
+		},
+		{
+			desc: "invalid database uri (missing port)",
+			inConfigString: `
+db_service:
+  enabled: true
+  databases:
+  - name: foo
+    protocol: postgres
+    uri: 192.168.1.1
+`,
+			outError: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			clf := CommandLineFlags{
+				ConfigString: base64.StdEncoding.EncodeToString([]byte(tt.inConfigString)),
+			}
+			err := Configure(&clf, service.MakeDefaultConfig())
+			if tt.outError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }

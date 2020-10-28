@@ -107,6 +107,8 @@ type CLIConf struct {
 	SiteName string
 	// KubernetesCluster specifies the kubernetes cluster to login to.
 	KubernetesCluster string
+	// DatabaseName specifies the database proxy server to log into.
+	DatabaseName string
 	// Interactive, when set to true, launches remote command with the terminal attached
 	Interactive bool
 	// Quiet mode, -q command (disables progress printing)
@@ -278,6 +280,18 @@ func Run(args []string) {
 	lsApps.Flag("verbose", "Show extra application fields.").Short('v').BoolVar(&cf.Verbose)
 	lsApps.Flag("cluster", clusterHelp).Envar(clusterEnvVar).StringVar(&cf.SiteName)
 
+	// Databases.
+	db := app.Command("db", "View and control proxied databases.")
+	dbList := db.Command("ls", "List all available databases.")
+	dbList.Flag("verbose", "Show extra database fields.").Short('v').BoolVar(&cf.Verbose)
+	dbList.Flag("cluster", clusterHelp).Envar(clusterEnvVar).StringVar(&cf.SiteName)
+	dbLogin := db.Command("login", "Retrieve credentials for a database.")
+	dbLogin.Arg("db", "Database to retrieve credentials for. Can be obtained from tsh db ls output.").Required().StringVar(&cf.DatabaseName)
+	dbLogout := db.Command("logout", "Remove database credentials.")
+	dbLogout.Arg("db", "Database to remove credentials for.").Required().StringVar(&cf.DatabaseName)
+	dbEnv := db.Command("env", "Print environment variables for the configured database.")
+	dbEnv.Flag("db", "Database to print environment for if logged into multiple.").StringVar(&cf.DatabaseName)
+
 	// join
 	join := app.Command("join", "Join the active SSH session")
 	join.Flag("cluster", clusterHelp).Envar(clusterEnvVar).StringVar(&cf.SiteName)
@@ -319,6 +333,7 @@ func Run(args []string) {
 	login.Arg("cluster", clusterHelp).StringVar(&cf.SiteName)
 	login.Flag("browser", browserHelp).StringVar(&cf.Browser)
 	login.Flag("kube-cluster", "Name of the Kubernetes cluster to login to").StringVar(&cf.KubernetesCluster)
+	login.Flag("db", "Database name to log into").Hidden().StringVar(&cf.DatabaseName)
 	login.Alias(loginUsageFooter)
 
 	// logout deletes obtained session certificates in ~/.tsh
@@ -429,6 +444,14 @@ func Run(args []string) {
 		err = kube.ls.run(&cf)
 	case kube.login.FullCommand():
 		err = kube.login.run(&cf)
+	case dbList.FullCommand():
+		onListDatabases(&cf)
+	case dbLogin.FullCommand():
+		onDatabaseLogin(&cf)
+	case dbLogout.FullCommand():
+		onDatabaseLogout(&cf)
+	case dbEnv.FullCommand():
+		onDatabaseEnv(&cf)
 	default:
 		// This should only happen when there's a missing switch case above.
 		err = trace.BadParameter("command %q not configured", command)
@@ -813,6 +836,9 @@ func onLogout(cf *CLIConf) {
 		fmt.Printf("Logged out %v from %v.\n", cf.Username, proxyHost)
 	// Remove all keys.
 	case proxyHost == "" && cf.Username == "":
+		// TODO(r0mant): Do via API instead.
+		onDatabaseLogout(cf)
+
 		// The makeClient function requires a proxy. However this value is not used
 		// because the user will be logged out from all proxies. Pass a dummy value
 		// to allow creation of the TeleportClient.
@@ -1342,6 +1368,9 @@ func makeClient(cf *CLIConf, useProfileLogin bool) (*client.TeleportClient, erro
 	if cf.KubernetesCluster != "" {
 		c.KubernetesCluster = cf.KubernetesCluster
 	}
+	if cf.DatabaseName != "" {
+		c.DatabaseName = cf.DatabaseName
+	}
 	// if host logins stored in profiles must be ignored...
 	if !useProfileLogin {
 		c.HostLogin = ""
@@ -1537,6 +1566,9 @@ func printStatus(debug bool, p *client.ProfileStatus, isActive bool) {
 		}
 	} else {
 		fmt.Printf("  Kubernetes:         disabled\n")
+	}
+	if len(p.Databases) != 0 {
+		fmt.Printf("  Databases:          %v\n", strings.Join(p.Databases, ", "))
 	}
 	fmt.Printf("  Valid until:        %v [%v]\n", p.ValidUntil, humanDuration)
 	fmt.Printf("  Extensions:         %v\n", strings.Join(p.Extensions, ", "))

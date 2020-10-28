@@ -96,6 +96,8 @@ func (e *EventsService) NewWatcher(ctx context.Context, watch services.Watch) (s
 			parser = newRemoteClusterParser()
 		case services.KindKubeService:
 			parser = newKubeServiceParser()
+		case services.KindDatabaseServer:
+			parser = newDatabaseServerParser()
 		default:
 			return nil, trace.BadParameter("watcher on object kind %v is not supported", kind)
 		}
@@ -719,6 +721,28 @@ type kubeServiceParser struct {
 
 func (p *kubeServiceParser) parse(event backend.Event) (services.Resource, error) {
 	return parseServer(event, services.KindKubeService)
+}
+
+func newDatabaseServerParser() *databaseServerParser {
+	return &databaseServerParser{
+		matchPrefix: backend.Key(databasesPrefix, serversPrefix, defaults.Namespace),
+	}
+}
+
+type databaseServerParser struct {
+	matchPrefix []byte
+}
+
+func (p *databaseServerParser) prefix() []byte {
+	return p.matchPrefix
+}
+
+func (p *databaseServerParser) match(key []byte) bool {
+	return bytes.HasPrefix(key, p.matchPrefix)
+}
+
+func (p *databaseServerParser) parse(event backend.Event) (services.Resource, error) {
+	return parseServer(event, services.KindDatabaseServer)
 }
 
 func parseServer(event backend.Event, kind string) (services.Resource, error) {

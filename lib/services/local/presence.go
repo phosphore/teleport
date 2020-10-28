@@ -1033,6 +1033,72 @@ func (s *PresenceService) DeleteAllKubeServices(ctx context.Context) error {
 	))
 }
 
+// GetDatabaseServers returns all registered database proxy servers.
+func (s *PresenceService) GetDatabaseServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.Server, error) {
+	if namespace == "" {
+		return nil, trace.BadParameter("missing namespace")
+	}
+	startKey := backend.Key(databasesPrefix, serversPrefix, namespace)
+	result, err := s.GetRange(ctx, startKey, backend.RangeEnd(startKey), backend.NoLimit)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	servers := make([]services.Server, len(result.Items))
+	for i, item := range result.Items {
+		server, err := services.GetServerMarshaler().UnmarshalServer(
+			item.Value,
+			services.KindDatabaseServer,
+			services.AddOptions(opts,
+				services.WithResourceID(item.ID),
+				services.WithExpires(item.Expires))...)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		servers[i] = server
+	}
+	return servers, nil
+}
+
+// UpsertDatabaseServer registers new database proxy server.
+func (s *PresenceService) UpsertDatabaseServer(ctx context.Context, server services.Server) (*services.KeepAlive, error) {
+	if err := server.CheckAndSetDefaults(); err != nil {
+		return nil, trace.Wrap(err)
+	}
+	value, err := services.GetServerMarshaler().MarshalServer(server)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	lease, err := s.Put(ctx, backend.Item{
+		Key:     backend.Key(databasesPrefix, serversPrefix, server.GetNamespace(), server.GetName()),
+		Value:   value,
+		Expires: server.Expiry(),
+		ID:      server.GetResourceID(),
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	if server.Expiry().IsZero() {
+		return &services.KeepAlive{}, nil
+	}
+	return &services.KeepAlive{
+		Type:    services.KeepAlive_DATABASE,
+		LeaseID: lease.ID,
+		Name:    server.GetName(),
+	}, nil
+}
+
+// DeleteDatabaseServer removes the specified database proxy server.
+func (s *PresenceService) DeleteDatabaseServer(ctx context.Context, namespace string, name string) error {
+	key := backend.Key(databasesPrefix, serversPrefix, namespace, name)
+	return s.Delete(ctx, key)
+}
+
+// DeleteAllDatabaseServers removes all registered database proxy servers.
+func (s *PresenceService) DeleteAllDatabaseServers(ctx context.Context, namespace string) error {
+	startKey := backend.Key(databasesPrefix, serversPrefix, namespace)
+	return s.DeleteRange(ctx, startKey, backend.RangeEnd(startKey))
+}
+
 // GetAppServers gets all application servers.
 func (s *PresenceService) GetAppServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.Server, error) {
 	if namespace == "" {
@@ -1118,6 +1184,8 @@ func (s *PresenceService) KeepAliveServer(ctx context.Context, h services.KeepAl
 		key = backend.Key(nodesPrefix, h.Namespace, h.Name)
 	case teleport.KeepAliveApp:
 		key = backend.Key(appsPrefix, serversPrefix, h.Namespace, h.Name)
+	case teleport.KeepAliveDatabase:
+		key = backend.Key(databasesPrefix, serversPrefix, h.Namespace, h.Name)
 	default:
 		return trace.BadParameter("unknown keep-alive type %q", h.GetType())
 	}
@@ -1137,6 +1205,7 @@ const (
 	remoteClustersPrefix    = "remoteClusters"
 	nodesPrefix             = "nodes"
 	appsPrefix              = "apps"
+	databasesPrefix         = "databases"
 	serversPrefix           = "servers"
 	namespacesPrefix        = "namespaces"
 	authServersPrefix       = "authservers"

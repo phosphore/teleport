@@ -344,6 +344,13 @@ const (
 	// AppSessionRequestEvent is an HTTP request and response.
 	AppSessionRequestEvent = "app.session.request"
 
+	//
+	DatabaseSessionStartEvent = "db.session.start"
+	//
+	DatabaseSessionEndEvent = "db.session.end"
+	//
+	DatabaseQueryEvent = "db.query"
+
 	// SessionRejectedReasonMaxConnections indicates that a session.rejected event
 	// corresponds to enforcement of the max_connections control.
 	SessionRejectedReasonMaxConnections = "max_connections limit reached"

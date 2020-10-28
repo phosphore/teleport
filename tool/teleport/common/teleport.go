@@ -134,6 +134,15 @@ func Run(options Options) (executedCommand string, conf *service.Config) {
 	start.Flag("app-public-addr",
 		"Public address of the application to proxy.").
 		StringVar(&ccf.AppPublicAddr)
+	start.Flag("db-name",
+		"Name of the proxied database.").
+		StringVar(&ccf.DatabaseName)
+	start.Flag("db-protocol",
+		fmt.Sprintf("Proxied database protocol. Supported are: %v.", defaults.DatabaseProtocols)).
+		StringVar(&ccf.DatabaseProtocol)
+	start.Flag("db-uri",
+		"Address proxied database is reachable at.").
+		StringVar(&ccf.DatabaseURI)
 
 	// define start's usage info (we use kingpin's "alias" field for this)
 	start.Alias(usageNotes + usageExamples)

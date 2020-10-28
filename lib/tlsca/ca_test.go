@@ -95,7 +95,13 @@ func TestKubeExtensions(t *testing.T) {
 		KubernetesUsers:   []string{"IAM#alice@example.com"},
 		KubernetesCluster: "kube-cluster",
 		TeleportCluster:   "tele-cluster",
-		Expires:           expires,
+		RouteToDatabase: RouteToDatabase{
+			DatabaseName: "postgres-rds",
+			ClusterName:  "root",
+		},
+		DatabaseNames: []string{"postgres", "main"},
+		DatabaseUsers: []string{"postgres", "alice"},
+		Expires:       expires,
 	}
 
 	subj, err := identity.Subject()

@@ -1097,6 +1097,73 @@ message AppSessionRequest {
     string Method = 5 [ (gogoproto.jsontag) = "method" ];
 }
 
+// DatabaseMetadata contains common database information.
+message DatabaseMetadata {
+    // DBName is the name of the proxied database from the configuration.
+    string DBName = 1 [ (gogoproto.jsontag) = "db_name" ];
+    // DBProtocol is the database type, e.g. postgres or mysql.
+    string DBProtocol = 2 [ (gogoproto.jsontag) = "db_protocol" ];
+    // DBEndpoint is the database endpoint to connect to.
+    string DBEndpoint = 3 [ (gogoproto.jsontag) = "db_endpoint" ];
+    // DBDatabase is the name of the database a user is connecting to.
+    string DBDatabase = 4 [ (gogoproto.jsontag) = "db_database" ];
+    // DBUser is the database username used to connect.
+    string DBUser = 5 [ (gogoproto.jsontag) = "db_user" ];
+}
+
+// DatabaseSessionStart is emitted when a user connects to a database.
+message DatabaseSessionStart {
+    // Metadata is a common event metadata.
+    Metadata Metadata = 1
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    // User is a common user event metadata.
+    UserMetadata User = 2
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    // SessionMetadata is a common event session metadata.
+    SessionMetadata Session = 3
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    // ServerMetadata is a common server metadata.
+    ServerMetadata Server = 4
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    // ConnectionMetadata holds information about the connection.
+    ConnectionMetadata Connection = 5
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    //
+    DatabaseMetadata Database = 6 [ (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+}
+
+// DatabaseQuery is emitted when a user executes a database query.
+message DatabaseQuery {
+    // Metadata is a common event metadata.
+    Metadata Metadata = 1
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    // User is a common user event metadata.
+    UserMetadata User = 2
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    // SessionMetadata is a common event session metadata.
+    SessionMetadata Session = 3
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    //
+    DatabaseMetadata Database = 4 [ (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    //
+    string Query = 5 [ (gogoproto.jsontag) = "db_query" ];
+}
+
+// DatabaseSessionEnd is emitted when a user ends the database session.
+message DatabaseSessionEnd {
+    // Metadata is a common event metadata.
+    Metadata Metadata = 1
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    // User is a common user event metadata.
+    UserMetadata User = 2
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    // SessionMetadata is a common event session metadata.
+    SessionMetadata Session = 3
+        [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+    //
+    DatabaseMetadata Database = 4 [ (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
+}
+
 // OneOf is a union of one of audit events submitted to the auth service
 message OneOf {
     // Event is one of the audit events
@@ -1140,6 +1207,9 @@ message OneOf {
         events.AppSessionStart AppSessionStart = 37;
         events.AppSessionChunk AppSessionChunk = 38;
         events.AppSessionRequest AppSessionRequest = 39;
+        events.DatabaseSessionStart DatabaseSessionStart = 40;
+        events.DatabaseSessionEnd DatabaseSessionEnd = 41;
+        events.DatabaseQuery DatabaseQuery = 42;
     }
 }
 

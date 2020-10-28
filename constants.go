@@ -128,6 +128,9 @@ const (
 	// ComponentApp is the application proxy service.
 	ComponentApp = "app:service"
 
+	// ComponentDB is the database proxy service.
+	ComponentDB = "db:service"
+
 	// ComponentAppProxy is the application handler within the web proxy service.
 	ComponentAppProxy = "app:web"
 
@@ -494,6 +497,14 @@ const (
 	// allowed kubernetes users
 	TraitKubeUsers = "kubernetes_users"
 
+	// TraitDbNames is the name of the role variable used to store
+	// allowed database names.
+	TraitDbNames = "db_names"
+
+	// TraitDbUsers is the name of the role variable used to store
+	// allowed database users.
+	TraitDbUsers = "db_users"
+
 	// TraitInternalLoginsVariable is the variable used to store allowed
 	// logins for local accounts.
 	TraitInternalLoginsVariable = "{{internal.logins}}"
@@ -505,6 +516,14 @@ const (
 	// TraitInternalKubeUsersVariable is the variable used to store allowed
 	// kubernetes users for local accounts.
 	TraitInternalKubeUsersVariable = "{{internal.kubernetes_users}}"
+
+	// TraitInternalDbNamesVariable is the variable used to store allowed
+	// database names for local accounts.
+	TraitInternalDbNamesVariable = "{{internal.db_names}}"
+
+	// TraitInternalDbUsersVariable is the variable used to store allowed
+	// database users for local accounts.
+	TraitInternalDbUsersVariable = "{{internal.db_users}}"
 )
 
 const (
@@ -599,6 +618,10 @@ const (
 	// UsageAppOnly specifies a certificate metadata that only allows it to be
 	// used for proxying applications.
 	UsageAppsOnly = "usage:apps"
+
+	// UsageDatabaseOnly specifies certificate usage metadata that only allows
+	// it to be used for proxying database connections.
+	UsageDatabaseOnly = "usage:db"
 )
 
 const (
@@ -692,6 +715,8 @@ const (
 	KeepAliveNode = "node"
 	// KeepAliveApp is the keep alive type for application server.
 	KeepAliveApp = "app"
+	// KeepAliveDatabase is the keep alive type for database server.
+	KeepAliveDatabase = "db"
 )
 
 const (
