@@ -104,7 +104,7 @@ type server struct {
 	// ctx is a context used for signalling and broadcast
 	ctx context.Context
 
-	*log.Entry
+	log.FieldLogger
 
 	// proxyWatcher monitors changes to the proxies
 	// and broadcasts updates
@@ -182,6 +182,8 @@ type Config struct {
 	// Component is a component used in logs
 	Component string
 
+	Log log.FieldLogger
+
 	// FIPS means Teleport was started in a FedRAMP/FIPS 140-2 compliant
 	// configuration.
 	FIPS bool
@@ -253,14 +255,18 @@ func NewServer(cfg Config) (Server, error) {
 
 	ctx, cancel := context.WithCancel(cfg.Context)
 
-	entry := log.WithFields(log.Fields{
+	logger := cfg.Log
+	if cfg.Log == nil {
+		logger = log.StandardLogger()
+	}
+	logger = logger.WithFields(log.Fields{
 		trace.Component: cfg.Component,
 	})
 	proxyWatcher, err := services.NewProxyWatcher(services.ProxyWatcherConfig{
 		Context:   ctx,
 		Component: cfg.Component,
 		Client:    cfg.LocalAuthClient,
-		Entry:     entry,
+		Entry:     logger,
 		ProxiesC:  make(chan []services.Server, 10),
 	})
 	if err != nil {
@@ -280,7 +286,7 @@ func NewServer(cfg Config) (Server, error) {
 		cancel:           cancel,
 		proxyWatcher:     proxyWatcher,
 		clusterPeers:     make(map[string]*clusterPeers),
-		Entry:            entry,
+		FieldLogger:      logger,
 		offlineThreshold: offlineThreshold,
 	}
 
@@ -303,6 +309,7 @@ func NewServer(cfg Config) (Server, error) {
 		sshutils.AuthMethods{
 			PublicKey: srv.keyAuth,
 		},
+		sshutils.SetLogger(logger),
 		sshutils.SetLimiter(cfg.Limiter),
 		sshutils.SetCiphers(cfg.Ciphers),
 		sshutils.SetKEXAlgorithms(cfg.KEXAlgorithms),
@@ -585,7 +592,7 @@ func (s *server) handleTransport(sconn *ssh.ServerConn, nch ssh.NewChannel) {
 	}
 
 	t := &transport{
-		log:              s.Entry,
+		log:              s.FieldLogger,
 		closeContext:     s.ctx,
 		authClient:       s.LocalAccessPoint,
 		channel:          channel,
