@@ -103,4 +103,8 @@ Please note:
 
   - This invitation token will expire in %d minutes.
   - %v must be reachable from the new database service.
+  - When proxying an onprem database, it must be configured with Teleport CA
+    and key pair issued by "tctl auth sign --format=db" command.
+  - When proxying an AWS RDS or Aurora database, the region must also be
+    specified with --db-aws-region flag.
 `

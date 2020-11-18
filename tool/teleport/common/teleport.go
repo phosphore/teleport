@@ -143,6 +143,12 @@ func Run(options Options) (executedCommand string, conf *service.Config) {
 	start.Flag("db-uri",
 		"Address proxied database is reachable at.").
 		StringVar(&ccf.DatabaseURI)
+	start.Flag("db-ca-cert",
+		"Database CA certificate path.").
+		StringVar(&ccf.DatabaseCACertFile)
+	start.Flag("db-aws-region",
+		"AWS region RDS/Aurora database instance is running in.").
+		StringVar(&ccf.DatabaseAWSRegion)
 
 	// define start's usage info (we use kingpin's "alias" field for this)
 	start.Alias(usageNotes + usageExamples)

@@ -1231,7 +1231,7 @@ func (s *ConfigTestSuite) TestAppsCLF(c *check.C) {
 	}
 }
 
-func TestDatabasesConfig(t *testing.T) {
+func TestDatabaseConfig(t *testing.T) {
 	tests := []struct {
 		inConfigString string
 		desc           string
@@ -1279,6 +1279,17 @@ db_service:
 			outError: true,
 		},
 		{
+			desc: "missing database uri",
+			inConfigString: `
+db_service:
+  enabled: true
+  databases:
+  - name: foo
+    protocol: postgres
+`,
+			outError: true,
+		},
+		{
 			desc: "invalid database uri (missing port)",
 			inConfigString: `
 db_service:
@@ -1297,6 +1308,60 @@ db_service:
 				ConfigString: base64.StdEncoding.EncodeToString([]byte(tt.inConfigString)),
 			}
 			err := Configure(&clf, service.MakeDefaultConfig())
+			if tt.outError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestDatabaseFlags(t *testing.T) {
+	tests := []struct {
+		inFlags  CommandLineFlags
+		desc     string
+		outError bool
+	}{
+		{
+			desc: "valid database config",
+			inFlags: CommandLineFlags{
+				DatabaseName:     "foo",
+				DatabaseProtocol: "postgres",
+				DatabaseURI:      "localhost:5432",
+			},
+			outError: false,
+		},
+		{
+			desc: "unsupported database protocol",
+			inFlags: CommandLineFlags{
+				DatabaseName:     "foo",
+				DatabaseProtocol: "unknown",
+				DatabaseURI:      "localhost:5432",
+			},
+			outError: true,
+		},
+		{
+			desc: "missing database uri",
+			inFlags: CommandLineFlags{
+				DatabaseName:     "foo",
+				DatabaseProtocol: "postgres",
+			},
+			outError: true,
+		},
+		{
+			desc: "invalid database uri (missing port)",
+			inFlags: CommandLineFlags{
+				DatabaseName:     "foo",
+				DatabaseProtocol: "postgres",
+				DatabaseURI:      "localhost",
+			},
+			outError: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			err := Configure(&tt.inFlags, service.MakeDefaultConfig())
 			if tt.outError {
 				require.Error(t, err)
 			} else {

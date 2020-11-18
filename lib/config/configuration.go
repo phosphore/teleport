@@ -1110,7 +1110,6 @@ func Configure(clf *CommandLineFlags, cfg *service.Config) error {
 	}
 
 	// If database name was specified on the command line, add to configuration.
-	// TODO(r0mant): Unit test this.
 	if clf.DatabaseName != "" {
 		cfg.Databases.Enabled = true
 		staticLabels, dynamicLabels, err := parseLabels(clf.Labels)

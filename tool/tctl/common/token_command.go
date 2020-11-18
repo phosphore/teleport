@@ -213,7 +213,7 @@ func (c *TokenCommand) Add(client auth.ClientI) error {
 			strings.ToLower(roles.String()),
 			token,
 			caPin,
-			proxies[0].GetAddr(),
+			proxies[0].GetPublicAddr(),
 			c.dbName,
 			c.dbProtocol,
 			c.dbURI,
