@@ -17,6 +17,7 @@ limitations under the License.
 package service
 
 import (
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net"
@@ -318,6 +319,9 @@ type ProxyConfig struct {
 	// DisableReverseTunnel disables reverse tunnel on the proxy
 	DisableReverseTunnel bool
 
+	// DisableDatabaseProxy disables database access proxy listener
+	DisableDatabaseProxy bool
+
 	// ReverseTunnelListenAddr is address where reverse tunnel dialers connect to
 	ReverseTunnelListenAddr utils.NetAddr
 
@@ -545,6 +549,12 @@ func (d *Database) Check() error {
 	if d.Name == "" {
 		return trace.BadParameter("empty database name")
 	}
+	// Unlike application access proxy, database proxy name doesn't necessarily
+	// need to be a valid subdomain but use the same validation logic for the
+	// simplicity and consistency.
+	if errs := validation.IsDNS1035Label(d.Name); len(errs) > 0 {
+		return trace.BadParameter("invalid database %q name: %v", d.Name, errs)
+	}
 	if !utils.SliceContainsStr(defaults.DatabaseProtocols, d.Protocol) {
 		return trace.BadParameter("unsupported database %q protocol %q, supported are: %v",
 			d.Name, d.Protocol, defaults.DatabaseProtocols)
@@ -552,6 +562,12 @@ func (d *Database) Check() error {
 	if _, _, err := net.SplitHostPort(d.URI); err != nil {
 		return trace.BadParameter("invalid database %q address %q: %v",
 			d.Name, d.URI, err)
+	}
+	if len(d.CACert) != 0 {
+		if _, err := x509.ParseCertificates(d.CACert); err != nil {
+			return trace.BadParameter("provided database %q CA doesn't appear to be a valid x509 certificate: %v",
+				d.Name, err)
+		}
 	}
 	return nil
 }

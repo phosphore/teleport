@@ -2235,6 +2235,7 @@ func (process *TeleportProcess) setupProxyListeners() (*proxyListeners, error) {
 			Listener:            listener,
 			DisableTLS:          cfg.Proxy.DisableWebService,
 			DisableSSH:          cfg.Proxy.DisableReverseTunnel,
+			DisableDB:           cfg.Proxy.DisableDatabaseProxy,
 			ID:                  teleport.Component(teleport.ComponentProxy, "tunnel", "web", process.id),
 		})
 		if err != nil {
@@ -2242,6 +2243,7 @@ func (process *TeleportProcess) setupProxyListeners() (*proxyListeners, error) {
 			return nil, trace.Wrap(err)
 		}
 		listeners.web = listeners.mux.TLS()
+		listeners.db = listeners.mux.DB()
 		listeners.reverseTunnel = listeners.mux.SSH()
 		go listeners.mux.Serve()
 		return &listeners, nil
@@ -2256,6 +2258,7 @@ func (process *TeleportProcess) setupProxyListeners() (*proxyListeners, error) {
 			Listener:            listener,
 			DisableTLS:          false,
 			DisableSSH:          true,
+			DisableDB:           cfg.Proxy.DisableDatabaseProxy,
 			ID:                  teleport.Component(teleport.ComponentProxy, "web", process.id),
 		})
 		if err != nil {
@@ -2263,7 +2266,7 @@ func (process *TeleportProcess) setupProxyListeners() (*proxyListeners, error) {
 			return nil, trace.Wrap(err)
 		}
 		listeners.web = listeners.mux.TLS()
-		listeners.db = listeners.mux.DB() // TODO(r0mant): Do this in other branches too.
+		listeners.db = listeners.mux.DB()
 		listeners.reverseTunnel, err = process.importOrCreateListener(listenerProxyTunnel, cfg.Proxy.ReverseTunnelListenAddr.Addr)
 		if err != nil {
 			listener.Close()
@@ -2273,7 +2276,7 @@ func (process *TeleportProcess) setupProxyListeners() (*proxyListeners, error) {
 		go listeners.mux.Serve()
 		return &listeners, nil
 	default:
-		process.Debugf("Proxy and reverse tunnel are listening on separate ports.")
+		process.Debug("Setup Proxy: Proxy and reverse tunnel are listening on separate ports.")
 		if !cfg.Proxy.DisableReverseTunnel {
 			listeners.reverseTunnel, err = process.importOrCreateListener(listenerProxyTunnel, cfg.Proxy.ReverseTunnelListenAddr.Addr)
 			if err != nil {
@@ -2282,10 +2285,33 @@ func (process *TeleportProcess) setupProxyListeners() (*proxyListeners, error) {
 			}
 		}
 		if !cfg.Proxy.DisableWebService {
-			listeners.web, err = process.importOrCreateListener(listenerProxyWeb, cfg.Proxy.WebAddr.Addr)
+			listener, err := process.importOrCreateListener(listenerProxyWeb, cfg.Proxy.WebAddr.Addr)
 			if err != nil {
 				listeners.Close()
 				return nil, trace.Wrap(err)
+			}
+			// Unless database proxy is explicitly disabled (which is currently
+			// only done by tests and not exposed via file config), the web
+			// listener is multiplexing both web and db client connections.
+			if !cfg.Proxy.DisableDatabaseProxy {
+				process.Debug("Setup Proxy: Multiplexing web and database proxy on the same port.")
+				listeners.mux, err = multiplexer.New(multiplexer.Config{
+					EnableProxyProtocol: cfg.Proxy.EnableProxyProtocol,
+					Listener:            listener,
+					DisableTLS:          false, // Web service is enabled or we wouldn't have gotten here.
+					DisableSSH:          true,  // Reverse tunnel is on a separate listener created above.
+					DisableDB:           false, // Database proxy is enabled or we wouldn't have gotten here.
+					ID:                  teleport.Component(teleport.ComponentProxy, "web", process.id),
+				})
+				if err != nil {
+					listener.Close()
+					listeners.Close()
+					return nil, trace.Wrap(err)
+				}
+				listeners.web = listeners.mux.TLS()
+				listeners.db = listeners.mux.DB()
+			} else {
+				listeners.web = listener
 			}
 		}
 		return &listeners, nil

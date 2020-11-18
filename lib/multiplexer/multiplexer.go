@@ -58,6 +58,8 @@ type Config struct {
 	DisableSSH bool
 	// DisableTLS disables TLS socket
 	DisableTLS bool
+	// DisableDB disabled database access proxy listener
+	DisableDB bool
 	// ID is an identifier used for debugging purposes
 	ID string
 }
@@ -246,7 +248,12 @@ func (m *Mux) detectAndForward(conn net.Conn) {
 		m.Debug("Detected an HTTP request. If this is for a health check, use an HTTPS request instead.")
 		conn.Close()
 	case ProtoPostgres:
-		m.WithField("protocol", connWrapper.protocol).Debug("Detected database connection.")
+		m.WithField("protocol", connWrapper.protocol).Debug("Detected Postgres client connection.")
+		if m.DisableDB {
+			m.Debug("Closing Postgres client connection: db proxy listener is disabled.")
+			conn.Close()
+			return
+		}
 		select {
 		case m.dbListener.connC <- connWrapper:
 		case <-m.context.Done():
@@ -332,7 +339,7 @@ var (
 	sshPrefix   = []byte{'S', 'S', 'H'}
 	tlsPrefix   = []byte{0x16}
 	psqlPrefix  = []byte{0x0, 0x0, 0x0, 0x8, 0x4, 0xd2, 0x16, 0x2f}
-	// cancel request
+	// TODO(r0mant): Implement CancelRequest detection.
 	psqlPrefix2 = []byte{0x0, 0x0, 0x0, 0x10, 0x4, 0xd2, 0x16, 0x2e}
 )
 
