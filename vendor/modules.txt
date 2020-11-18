@@ -271,7 +271,6 @@ github.com/imdario/mergo
 ## explicit
 github.com/iovisor/gobpf/bcc
 github.com/iovisor/gobpf/pkg/cpuonline
-# github.com/jmespath/go-jmespath v0.4.0
 # github.com/jackc/chunkreader/v2 v2.0.1
 github.com/jackc/chunkreader/v2
 # github.com/jackc/pgconn v1.7.0
@@ -282,12 +281,12 @@ github.com/jackc/pgconn/internal/ctxwatch
 github.com/jackc/pgio
 # github.com/jackc/pgpassfile v1.0.0
 github.com/jackc/pgpassfile
-# github.com/jackc/pgproto3/v2 v2.0.5
+# github.com/jackc/pgproto3/v2 v2.0.7-0.20201117225705-88b6398594fc
 ## explicit
 github.com/jackc/pgproto3/v2
 # github.com/jackc/pgservicefile v0.0.0-20200714003250-2b9c44734f2b
 github.com/jackc/pgservicefile
-# github.com/jmespath/go-jmespath v0.3.0
+# github.com/jmespath/go-jmespath v0.4.0
 github.com/jmespath/go-jmespath
 # github.com/johannesboyne/gofakes3 v0.0.0-20191228161223-9aee1c78a252
 ## explicit

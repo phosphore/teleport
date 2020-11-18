@@ -45,7 +45,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/iovisor/gobpf v0.0.1
 	github.com/jackc/pgconn v1.7.0
-	github.com/jackc/pgproto3/v2 v2.0.5
+	github.com/jackc/pgproto3/v2 v2.0.7-0.20201117225705-88b6398594fc
 	github.com/johannesboyne/gofakes3 v0.0.0-20191228161223-9aee1c78a252
 	github.com/jonboulle/clockwork v0.2.1
 	github.com/json-iterator/go v1.1.10
