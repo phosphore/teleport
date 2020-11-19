@@ -42,6 +42,7 @@ import (
 	"github.com/gravitational/teleport/lib/backend"
 	"github.com/gravitational/teleport/lib/client"
 	"github.com/gravitational/teleport/lib/client/identityfile"
+	"github.com/gravitational/teleport/lib/client/pgservicefile"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/kube/kubeconfig"
@@ -286,9 +287,9 @@ func Run(args []string) {
 	dbList.Flag("verbose", "Show extra database fields.").Short('v').BoolVar(&cf.Verbose)
 	dbList.Flag("cluster", clusterHelp).Envar(clusterEnvVar).StringVar(&cf.SiteName)
 	dbLogin := db.Command("login", "Retrieve credentials for a database.")
-	dbLogin.Arg("db", "Database to retrieve credentials for. Can be obtained from tsh db ls output.").Required().StringVar(&cf.DatabaseName)
+	dbLogin.Arg("db", "Database to retrieve credentials for. Can be obtained from 'tsh db ls' output.").Required().StringVar(&cf.DatabaseName)
 	dbLogout := db.Command("logout", "Remove database credentials.")
-	dbLogout.Arg("db", "Database to remove credentials for.").Required().StringVar(&cf.DatabaseName)
+	dbLogout.Arg("db", "Database to remove credentials for.").StringVar(&cf.DatabaseName)
 	dbEnv := db.Command("env", "Print environment variables for the configured database.")
 	dbEnv.Flag("db", "Database to print environment for if logged into multiple.").StringVar(&cf.DatabaseName)
 
@@ -807,6 +808,25 @@ func onLogout(cf *CLIConf) {
 			return
 		}
 
+		// Load profile for the requested proxy/user.
+		profile, err := client.StatusFor("", proxyHost, cf.Username)
+		if err != nil && !trace.IsNotFound(err) {
+			utils.FatalError(err)
+			return
+		}
+
+		// Log out user from the databases.
+		if profile != nil {
+			for _, db := range profile.Databases {
+				log.Debugf("Logging %v out of database %v.", profile.Name, db)
+				err = pgservicefile.Delete(db)
+				if err != nil {
+					utils.FatalError(err)
+					return
+				}
+			}
+		}
+
 		// Remove keys for this user from disk and running agent.
 		err = tc.Logout()
 		if err != nil {
@@ -836,9 +856,6 @@ func onLogout(cf *CLIConf) {
 		fmt.Printf("Logged out %v from %v.\n", cf.Username, proxyHost)
 	// Remove all keys.
 	case proxyHost == "" && cf.Username == "":
-		// TODO(r0mant): Do via API instead.
-		onDatabaseLogout(cf)
-
 		// The makeClient function requires a proxy. However this value is not used
 		// because the user will be logged out from all proxies. Pass a dummy value
 		// to allow creation of the TeleportClient.
@@ -856,6 +873,19 @@ func onLogout(cf *CLIConf) {
 			if err != nil {
 				utils.FatalError(err)
 				return
+			}
+		}
+
+		// Remove all database access related profiles as well such as Postgres
+		// connection service file.
+		for _, profile := range profiles {
+			for _, db := range profile.Databases {
+				log.Debugf("Logging %v out of database %v.", profile.Name, db)
+				err = pgservicefile.Delete(db)
+				if err != nil {
+					utils.FatalError(err)
+					return
+				}
 			}
 		}
 
@@ -1031,6 +1061,43 @@ func showApps(servers []services.Server, verbose bool) {
 					}
 					t.AddRow([]string{name, addr, strings.Join(v, ", ")})
 				}
+			}
+		}
+		fmt.Println(t.AsBuffer().String())
+	}
+}
+
+func showDatabases(servers []services.Server, active []string, verbose bool) {
+	if verbose {
+		t := asciitable.MakeTable([]string{"Name", "Description", "URI", "Labels"})
+		for _, server := range servers {
+			for _, db := range server.GetDatabases() {
+				name := db.Name
+				if utils.SliceContainsStr(active, db.Name) {
+					name = fmt.Sprintf("> %v", name)
+				}
+				t.AddRow([]string{
+					name,
+					db.Description,
+					db.URI,
+					services.LabelsAsString(db.StaticLabels, db.DynamicLabels),
+				})
+			}
+		}
+		fmt.Println(t.AsBuffer().String())
+	} else {
+		t := asciitable.MakeTable([]string{"Name", "Description", "Labels"})
+		for _, server := range servers {
+			for _, db := range server.GetDatabases() {
+				name := db.Name
+				if utils.SliceContainsStr(active, db.Name) {
+					name = fmt.Sprintf("> %v", name)
+				}
+				t.AddRow([]string{
+					name,
+					db.Description,
+					services.LabelsAsString(db.StaticLabels, db.DynamicLabels),
+				})
 			}
 		}
 		fmt.Println(t.AsBuffer().String())

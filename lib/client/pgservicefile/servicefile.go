@@ -14,16 +14,76 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package pg
+package pgservicefile
 
 import (
+	"fmt"
 	"os/user"
 	"path/filepath"
 	"strconv"
 
+	"github.com/gravitational/teleport/lib/client"
+	"github.com/gravitational/teleport/lib/defaults"
+	"github.com/gravitational/teleport/lib/utils"
+
 	"github.com/gravitational/trace"
 	"gopkg.in/ini.v1"
 )
+
+// Add updates Postgres connection service file at the default location with
+// the connection information for the provided profile.
+func Add(name string, profile *client.ProfileStatus) error {
+	serviceFile, err := Load("")
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	addr, err := utils.ParseAddr(profile.ProxyURL.Host)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	err = serviceFile.Add(ConnectProfile{
+		Name:        name,
+		Host:        addr.Host(),
+		Port:        addr.Port(defaults.HTTPListenPort),
+		SSLMode:     SSLModeVerifyFull, // TODO(r0mant): Support insecure mode.
+		SSLRootCert: profile.CACertPath(),
+		SSLCert:     profile.DatabaseCertPath(name),
+		SSLKey:      profile.KeyPath(),
+	})
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	fmt.Printf(tshMessage, name)
+	return nil
+}
+
+// Env returns environment variables for the provided Postgres service from
+// the default connection service file.
+func Env(name string) (map[string]string, error) {
+	serviceFile, err := Load("")
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	env, err := serviceFile.Env(name)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return env, nil
+}
+
+// Delete deletes specified connection profile from the default Postgres
+// service file.
+func Delete(name string) error {
+	serviceFile, err := Load("")
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	err = serviceFile.Delete(name)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	return nil
+}
 
 // serviceFile represents Postgres connection service file.
 //
@@ -35,9 +95,9 @@ type serviceFile struct {
 	path string
 }
 
-// LoadServiceFile loads Postgres connection service file from the provided
-// path or the default location if it's not provided.
-func LoadServiceFile(path string) (*serviceFile, error) {
+// Load loads Postgres connection service file from the provided path or the
+// default location if it's not provided.
+func Load(path string) (*serviceFile, error) {
 	// If the file path wasn't provided, use the default location which
 	// is .pg_service.conf file in the user's home directory.
 	if path == "" {
@@ -95,9 +155,9 @@ func (s *serviceFile) Add(profile ConnectProfile) error {
 	return s.iniFile.SaveTo(s.path)
 }
 
-// AsEnv returns the specified connection profile information as a set of
+// Env returns the specified connection profile information as a set of
 // environment variables recognized by Postgres clients.
-func (s *serviceFile) AsEnv(name string) (map[string]string, error) {
+func (s *serviceFile) Env(name string) (map[string]string, error) {
 	section, err := s.iniFile.GetSection(name)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -162,3 +222,22 @@ type ConnectProfile struct {
 
 // pgServiceFile is the default name of the Postgres service file.
 const pgServiceFile = ".pg_service.conf"
+
+// SSLModeVerifyFull is the Postgres SSL "verify-full" mode.
+const SSLModeVerifyFull = "verify-full"
+
+// tshMessage is printed after Postgres service file has been updated.
+const tshMessage = `
+Connection information for PostgreSQL database %[1]q has been saved
+to ~/.pg_service.conf.
+
+You can now connect to the database using the following command:
+
+  $ psql "service=%[1]v user=<user> dbname=<dbname>"
+
+Or configure environment variables and use regular CLI flags:
+
+  $ eval $(tsh db env)
+  $ psql -U <user> <database>
+
+`

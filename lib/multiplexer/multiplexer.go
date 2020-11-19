@@ -58,7 +58,7 @@ type Config struct {
 	DisableSSH bool
 	// DisableTLS disables TLS socket
 	DisableTLS bool
-	// DisableDB disabled database access proxy listener
+	// DisableDB disables database access proxy listener
 	DisableDB bool
 	// ID is an identifier used for debugging purposes
 	ID string

@@ -23,8 +23,8 @@ import (
 	"github.com/gravitational/teleport/lib/backend/lite"
 	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/utils"
-	"github.com/stretchr/testify/require"
 
+	"github.com/stretchr/testify/require"
 	"gopkg.in/check.v1"
 )
 

@@ -37,11 +37,11 @@ import (
 	"github.com/gravitational/teleport/lib/multiplexer/test"
 	"github.com/gravitational/teleport/lib/sshutils"
 	"github.com/gravitational/teleport/lib/utils"
-	"github.com/jackc/pgproto3/v2"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
+	"github.com/jackc/pgproto3/v2"
 	"github.com/stretchr/testify/require"
 )
 

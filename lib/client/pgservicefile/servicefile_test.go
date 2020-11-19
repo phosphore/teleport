@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package pg
+package pgservicefile
 
 import (
 	"path/filepath"
@@ -27,7 +27,7 @@ import (
 func TestServiceFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), pgServiceFile)
 
-	serviceFile, err := LoadServiceFile(path)
+	serviceFile, err := Load(path)
 	require.NoError(t, err)
 
 	profile := ConnectProfile{
@@ -43,7 +43,7 @@ func TestServiceFile(t *testing.T) {
 	err = serviceFile.Add(profile)
 	require.NoError(t, err)
 
-	env, err := serviceFile.AsEnv(profile.Name)
+	env, err := serviceFile.Env(profile.Name)
 	require.NoError(t, err)
 	require.Equal(t, map[string]string{
 		"PGHOST":        profile.Host,
@@ -57,6 +57,6 @@ func TestServiceFile(t *testing.T) {
 	err = serviceFile.Delete(profile.Name)
 	require.NoError(t, err)
 
-	env, err = serviceFile.AsEnv(profile.Name)
+	env, err = serviceFile.Env(profile.Name)
 	require.Error(t, err)
 }
