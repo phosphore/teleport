@@ -449,10 +449,17 @@ type certRequest struct {
 	appPublicAddr string
 	// appClusterName is the name of the cluster this application is in.
 	appClusterName string
-	// dbName specifies the name of the database instance to encode.
-	dbName string
+	// dbServiceName specifies the name of the database instance to encode.
+	dbServiceName string
 	// dbClusterName is the name of the cluster the database instance is in.
+	// TODO(r0mant): Unused.
 	dbClusterName string
+	// dbProtocol is the type of the database cert is being issued for.
+	dbProtocol string
+	// dbUsername is the optional database user.
+	dbUsername string
+	// dbDatabase is the optional database name.
+	dbDatabase string
 }
 
 // GenerateUserTestCerts is used to generate user certificate, used internally for tests
@@ -646,8 +653,11 @@ func (a *Server) generateUserCert(req certRequest) (*certs, error) {
 		},
 		TeleportCluster: clusterName,
 		RouteToDatabase: tlsca.RouteToDatabase{
-			DatabaseName: req.dbName,
-			ClusterName:  req.routeToCluster,
+			ServiceName: req.dbServiceName,
+			ClusterName: req.routeToCluster,
+			Protocol:    req.dbProtocol,
+			Username:    req.dbUsername,
+			Database:    req.dbDatabase,
 		},
 		DatabaseNames: dbNames,
 		DatabaseUsers: dbUsers,

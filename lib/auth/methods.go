@@ -227,8 +227,6 @@ type AuthenticateSSHRequest struct {
 	// KubernetesCluster sets the target kubernetes cluster for the TLS
 	// certificate. This can be empty on older clients.
 	KubernetesCluster string `json:"kubernetes_cluster"`
-	// RouteToDatabase specifies name of the database to route requests to.
-	RouteToDatabase string `json:"route_to_database,omitempty"`
 }
 
 // CheckAndSetDefaults checks and sets default certificate values
@@ -354,7 +352,6 @@ func (s *Server) AuthenticateSSHUser(req AuthenticateSSHRequest) (*SSHLoginRespo
 		traits:            user.GetTraits(),
 		routeToCluster:    req.RouteToCluster,
 		kubernetesCluster: req.KubernetesCluster,
-		dbName:            req.RouteToDatabase,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)

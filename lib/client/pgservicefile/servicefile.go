@@ -17,10 +17,11 @@ limitations under the License.
 package pgservicefile
 
 import (
-	"fmt"
+	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"text/template"
 
 	"github.com/gravitational/teleport/lib/client"
 	"github.com/gravitational/teleport/lib/defaults"
@@ -32,7 +33,7 @@ import (
 
 // Add updates Postgres connection service file at the default location with
 // the connection information for the provided profile.
-func Add(name string, profile *client.ProfileStatus) error {
+func Add(name, user, database string, profile *client.ProfileStatus) error {
 	serviceFile, err := Load("")
 	if err != nil {
 		return trace.Wrap(err)
@@ -45,6 +46,8 @@ func Add(name string, profile *client.ProfileStatus) error {
 		Name:        name,
 		Host:        addr.Host(),
 		Port:        addr.Port(defaults.HTTPListenPort),
+		User:        user,
+		Database:    database,
 		SSLMode:     SSLModeVerifyFull, // TODO(r0mant): Support insecure mode.
 		SSLRootCert: profile.CACertPath(),
 		SSLCert:     profile.DatabaseCertPath(name),
@@ -53,8 +56,11 @@ func Add(name string, profile *client.ProfileStatus) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	fmt.Printf(tshMessage, name)
-	return nil
+	return tshMessageTpl.Execute(os.Stdout, map[string]string{
+		"service":  name,
+		"user":     user,
+		"database": database,
+	})
 }
 
 // Env returns environment variables for the provided Postgres service from
@@ -147,6 +153,12 @@ func (s *serviceFile) Add(profile ConnectProfile) error {
 	}
 	section.NewKey("host", profile.Host)
 	section.NewKey("port", strconv.Itoa(profile.Port))
+	if profile.User != "" {
+		section.NewKey("user", profile.User)
+	}
+	if profile.Database != "" {
+		section.NewKey("dbname", profile.Database)
+	}
 	section.NewKey("sslmode", profile.SSLMode)
 	section.NewKey("sslrootcert", profile.SSLRootCert)
 	section.NewKey("sslcert", profile.SSLCert)
@@ -186,14 +198,29 @@ func (s *serviceFile) Env(name string) (map[string]string, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	return map[string]string{
+	env := map[string]string{
 		"PGHOST":        host.Value(),
 		"PGPORT":        port.Value(),
 		"PGSSLMODE":     sslMode.Value(),
 		"PGSSLROOTCERT": sslRootCert.Value(),
 		"PGSSLCERT":     sslCert.Value(),
 		"PGSSLKEY":      sslKey.Value(),
-	}, nil
+	}
+	if section.HasKey("user") {
+		user, err := section.GetKey("user")
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		env["PGUSER"] = user.Value()
+	}
+	if section.HasKey("dbname") {
+		database, err := section.GetKey("dbname")
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		env["PGDATABASE"] = database.Value()
+	}
+	return env, nil
 }
 
 // Delete deletes the specified connection profile and saves the service file.
@@ -210,6 +237,10 @@ type ConnectProfile struct {
 	Host string
 	// Port is the port number to connect to.
 	Port int
+	// User is an optional database user name.
+	User string
+	// Database is an optional database name.
+	Database string
 	// SSLMode is the SSL connection mode.
 	SSLMode string
 	// SSLRootCert is the CA certificate path.
@@ -227,17 +258,16 @@ const pgServiceFile = ".pg_service.conf"
 const SSLModeVerifyFull = "verify-full"
 
 // tshMessage is printed after Postgres service file has been updated.
-const tshMessage = `
-Connection information for PostgreSQL database %[1]q has been saved
-to ~/.pg_service.conf.
+var tshMessageTpl = template.Must(template.New("").Parse(`
+Connection information for PostgreSQL database "{{.service}}" has been saved.
 
 You can now connect to the database using the following command:
 
-  $ psql "service=%[1]v user=<user> dbname=<dbname>"
+  $ psql "service={{.service}}{{if not .user}} user=<user>{{end}}{{if not .database}} dbname=<dbname>{{end}}"
 
 Or configure environment variables and use regular CLI flags:
 
   $ eval $(tsh db env)
-  $ psql -U <user> <database>
+  $ psql{{if not .user}} -U <user>{{end}}{{if not .database}} <dbname>{{end}}
 
-`
+`))

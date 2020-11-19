@@ -108,7 +108,11 @@ type CLIConf struct {
 	SiteName string
 	// KubernetesCluster specifies the kubernetes cluster to login to.
 	KubernetesCluster string
-	// DatabaseName specifies the database proxy server to log into.
+	// DatabaseService specifies the database proxy server to log into.
+	DatabaseService string
+	// DatabaseUser specifies database user to embed in the certificate.
+	DatabaseUser string
+	// DatabaseName specifies database name to embed in the certificate.
 	DatabaseName string
 	// Interactive, when set to true, launches remote command with the terminal attached
 	Interactive bool
@@ -287,11 +291,13 @@ func Run(args []string) {
 	dbList.Flag("verbose", "Show extra database fields.").Short('v').BoolVar(&cf.Verbose)
 	dbList.Flag("cluster", clusterHelp).Envar(clusterEnvVar).StringVar(&cf.SiteName)
 	dbLogin := db.Command("login", "Retrieve credentials for a database.")
-	dbLogin.Arg("db", "Database to retrieve credentials for. Can be obtained from 'tsh db ls' output.").Required().StringVar(&cf.DatabaseName)
+	dbLogin.Arg("db", "Database to retrieve credentials for. Can be obtained from 'tsh db ls' output.").Required().StringVar(&cf.DatabaseService)
+	dbLogin.Flag("db-user", "Optional database user to configure as default.").StringVar(&cf.DatabaseUser)
+	dbLogin.Flag("db-name", "Optional database name to configure as default.").StringVar(&cf.DatabaseName)
 	dbLogout := db.Command("logout", "Remove database credentials.")
-	dbLogout.Arg("db", "Database to remove credentials for.").StringVar(&cf.DatabaseName)
+	dbLogout.Arg("db", "Database to remove credentials for.").StringVar(&cf.DatabaseService)
 	dbEnv := db.Command("env", "Print environment variables for the configured database.")
-	dbEnv.Flag("db", "Database to print environment for if logged into multiple.").StringVar(&cf.DatabaseName)
+	dbEnv.Flag("db", "Database to print environment for if logged into multiple.").StringVar(&cf.DatabaseService)
 
 	// join
 	join := app.Command("join", "Join the active SSH session")
@@ -334,7 +340,6 @@ func Run(args []string) {
 	login.Arg("cluster", clusterHelp).StringVar(&cf.SiteName)
 	login.Flag("browser", browserHelp).StringVar(&cf.Browser)
 	login.Flag("kube-cluster", "Name of the Kubernetes cluster to login to").StringVar(&cf.KubernetesCluster)
-	login.Flag("db", "Database name to log into").Hidden().StringVar(&cf.DatabaseName)
 	login.Alias(loginUsageFooter)
 
 	// logout deletes obtained session certificates in ~/.tsh
@@ -1435,8 +1440,8 @@ func makeClient(cf *CLIConf, useProfileLogin bool) (*client.TeleportClient, erro
 	if cf.KubernetesCluster != "" {
 		c.KubernetesCluster = cf.KubernetesCluster
 	}
-	if cf.DatabaseName != "" {
-		c.DatabaseName = cf.DatabaseName
+	if cf.DatabaseService != "" {
+		c.DatabaseService = cf.DatabaseService
 	}
 	// if host logins stored in profiles must be ignored...
 	if !useProfileLogin {

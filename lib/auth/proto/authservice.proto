@@ -133,7 +133,20 @@ message UserCertsRequest {
     string KubernetesCluster = 7 [ (gogoproto.jsontag) = "kubernetes_cluster,omitempty" ];
     // RouteToDatabase specifies the target database proxy name to encode into
     // certificate so database client requests are routed appropriately.
-    string RouteToDatabase = 8 [ (gogoproto.jsontag) = "route_to_database,omitempty" ];
+    RouteToDatabase RouteToDatabase = 8
+        [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "route_to_database,omitempty" ];
+}
+
+// RouteToDatabase combines parameters for database service routing information.
+message RouteToDatabase {
+    // ServiceName is the Teleport database proxy service name the cert is for.
+    string ServiceName = 1 [ (gogoproto.jsontag) = "service_name" ];
+    // Protocol is the type of the database the cert is for.
+    string Protocol = 2 [ (gogoproto.jsontag) = "protocol" ];
+    // Username is an optional database username to embed.
+    string Username = 3 [ (gogoproto.jsontag) = "username,omitempty" ];
+    // Database is an optional database name to embed.
+    string Database = 4 [ (gogoproto.jsontag) = "database,omitempty" ];
 }
 
 // GetUserRequest specifies parameters for the GetUser method.

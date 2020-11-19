@@ -146,7 +146,7 @@ type ReissueParams struct {
 	RouteToCluster    string
 	KubernetesCluster string
 	AccessRequests    []string
-	RouteToDatabase   string
+	RouteToDatabase   proto.RouteToDatabase
 }
 
 // ReissueUserCerts generates certificates for the user
@@ -207,8 +207,8 @@ func (proxy *ProxyClient) ReissueUserCerts(ctx context.Context, params ReissuePa
 	if params.KubernetesCluster != "" {
 		key.KubeTLSCerts[params.KubernetesCluster] = certs.TLS
 	}
-	if params.RouteToDatabase != "" {
-		key.DBTLSCerts[params.RouteToDatabase] = certs.TLS
+	if params.RouteToDatabase.ServiceName != "" {
+		key.DBTLSCerts[params.RouteToDatabase.ServiceName] = certs.TLS
 	}
 
 	// save the cert to the local storage (~/.tsh usually):
@@ -340,23 +340,24 @@ func (proxy *ProxyClient) GetDatabaseServers(ctx context.Context, namespace stri
 }
 
 // GetDatabaseServersFor returns all servers proxying the specified database.
-func (proxy *ProxyClient) GetDatabaseServersFor(ctx context.Context, namespace, dbName string) (result []services.Server, err error) {
+func (proxy *ProxyClient) GetDatabaseServersFor(ctx context.Context, namespace, dbName string) (result []services.Server, db *services.Database, err error) {
 	authClient, err := proxy.CurrentClusterAccessPoint(ctx, false)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return nil, nil, trace.Wrap(err)
 	}
 	servers, err := authClient.GetDatabaseServers(ctx, namespace, services.SkipValidation())
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return nil, nil, trace.Wrap(err)
 	}
 	for _, server := range servers {
-		for _, db := range server.GetDatabases() {
-			if db.Name == dbName {
+		for _, database := range server.GetDatabases() {
+			if database.Name == dbName {
 				result = append(result, server)
+				db = database
 			}
 		}
 	}
-	return result, nil
+	return result, db, nil
 }
 
 // CurrentClusterAccessPoint returns cluster access point to the currently

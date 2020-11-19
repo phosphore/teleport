@@ -378,7 +378,7 @@ func (s *Server) authorize(ctx context.Context) (*sessionContext, error) {
 	// Fetch the requested database.
 	var db *services.Database
 	for _, d := range s.Server.GetDatabases() {
-		if d.Name == identity.RouteToDatabase.DatabaseName {
+		if d.Name == identity.RouteToDatabase.ServiceName {
 			db = d
 		}
 	}

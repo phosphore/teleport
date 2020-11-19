@@ -1119,7 +1119,10 @@ func (a *ServerWithRoles) GenerateUserCerts(ctx context.Context, req proto.UserC
 		overrideRoleTTL:   a.hasBuiltinRole(string(teleport.RoleAdmin)),
 		routeToCluster:    req.RouteToCluster,
 		kubernetesCluster: req.KubernetesCluster,
-		dbName:            req.RouteToDatabase,
+		dbServiceName:     req.RouteToDatabase.ServiceName,
+		dbProtocol:        req.RouteToDatabase.Protocol,
+		dbUsername:        req.RouteToDatabase.Username,
+		dbDatabase:        req.RouteToDatabase.Database,
 		checker:           checker,
 		traits:            traits,
 		activeRequests: services.RequestIDs{

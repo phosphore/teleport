@@ -34,6 +34,8 @@ func TestServiceFile(t *testing.T) {
 		Name:        "test",
 		Host:        "localhost",
 		Port:        5342,
+		User:        "postgres",
+		Database:    "postgres",
 		SSLMode:     "on",
 		SSLRootCert: "ca.pem",
 		SSLCert:     "cert.pem",
@@ -48,6 +50,8 @@ func TestServiceFile(t *testing.T) {
 	require.Equal(t, map[string]string{
 		"PGHOST":        profile.Host,
 		"PGPORT":        strconv.Itoa(profile.Port),
+		"PGUSER":        profile.User,
+		"PGDATABASE":    profile.Database,
 		"PGSSLMODE":     profile.SSLMode,
 		"PGSSLROOTCERT": profile.SSLRootCert,
 		"PGSSLCERT":     profile.SSLCert,

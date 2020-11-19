@@ -126,10 +126,20 @@ type RouteToApp struct {
 
 // RouteToDatabase contains routing information for databases.
 type RouteToDatabase struct {
-	// DatabaseName is the name of the database to route requests to.
-	DatabaseName string
+	// ServiceName is the name of the Teleport database proxy service
+	// to route requests to.
+	ServiceName string
 	// ClusterName is the cluster the database is connected to.
 	ClusterName string
+	// Protocol is the database protocol.
+	//
+	// It is embedded in identity so clients can understand what type
+	// of database this is without contacting server.
+	Protocol string
+	// Username is an optional database username.
+	Username string
+	// Database is an optional database name.
+	Database string
 }
 
 // GetRouteToApp returns application routing data. If missing, returns an error.
@@ -191,20 +201,32 @@ var (
 	TeleportClusterASN1ExtensionOID = asn1.ObjectIdentifier{1, 3, 9999, 1, 7}
 
 	// DatabaseServiceNameASN1ExtensionOID is an extension ID used when encoding/decoding
-	// database service name into certificate.
+	// database service name into certificates.
 	DatabaseServiceNameASN1ExtensionOID = asn1.ObjectIdentifier{1, 3, 9999, 2, 1}
 
 	// DatabaseClusterNameASN1ExtensionOID is an extension ID used when encoding/decoding
-	// cluster database service is running in into certificate
+	// cluster database service is running in into certificates.
 	DatabaseClusterNameASN1ExtensionOID = asn1.ObjectIdentifier{1, 3, 9999, 2, 2}
 
+	// DatabaseProtocolASN1ExtensionOID is an extension ID used when encoding/decoding
+	// database protocol into certificates.
+	DatabaseProtocolASN1ExtensionOID = asn1.ObjectIdentifier{1, 3, 9999, 2, 3}
+
+	// DatabaseUsernameASN1ExtensionOID is an extension ID used when encoding/decoding
+	// database username into certificates.
+	DatabaseUsernameASN1ExtensionOID = asn1.ObjectIdentifier{1, 3, 9999, 2, 4}
+
+	// DatabaseNameASN1ExtensionOID is an extension ID used when encoding/decoding
+	// database name into certificates.
+	DatabaseNameASN1ExtensionOID = asn1.ObjectIdentifier{1, 3, 9999, 2, 5}
+
 	// DatabaseNamesASN1ExtensionOID is an extension OID used when encoding/decoding
-	// allowed database names into certificate.
-	DatabaseNamesASN1ExtensionOID = asn1.ObjectIdentifier{1, 3, 9999, 2, 3}
+	// allowed database names into certificates.
+	DatabaseNamesASN1ExtensionOID = asn1.ObjectIdentifier{1, 3, 9999, 2, 6}
 
 	// DatabaseUsersASN1ExtensionOID is an extension OID used when encoding/decoding
 	// allowed database users into certificates.
-	DatabaseUsersASN1ExtensionOID = asn1.ObjectIdentifier{1, 3, 9999, 2, 4}
+	DatabaseUsersASN1ExtensionOID = asn1.ObjectIdentifier{1, 3, 9999, 2, 7}
 )
 
 // Subject converts identity to X.509 subject name
@@ -287,11 +309,11 @@ func (id *Identity) Subject() (pkix.Name, error) {
 	}
 
 	// Encode routing metadata for databases.
-	if id.RouteToDatabase.DatabaseName != "" {
+	if id.RouteToDatabase.ServiceName != "" {
 		subject.ExtraNames = append(subject.ExtraNames,
 			pkix.AttributeTypeAndValue{
 				Type:  DatabaseServiceNameASN1ExtensionOID,
-				Value: id.RouteToDatabase.DatabaseName,
+				Value: id.RouteToDatabase.ServiceName,
 			})
 	}
 	if id.RouteToDatabase.ClusterName != "" {
@@ -299,6 +321,27 @@ func (id *Identity) Subject() (pkix.Name, error) {
 			pkix.AttributeTypeAndValue{
 				Type:  DatabaseClusterNameASN1ExtensionOID,
 				Value: id.RouteToDatabase.ClusterName,
+			})
+	}
+	if id.RouteToDatabase.Protocol != "" {
+		subject.ExtraNames = append(subject.ExtraNames,
+			pkix.AttributeTypeAndValue{
+				Type:  DatabaseProtocolASN1ExtensionOID,
+				Value: id.RouteToDatabase.Protocol,
+			})
+	}
+	if id.RouteToDatabase.Username != "" {
+		subject.ExtraNames = append(subject.ExtraNames,
+			pkix.AttributeTypeAndValue{
+				Type:  DatabaseUsernameASN1ExtensionOID,
+				Value: id.RouteToDatabase.Username,
+			})
+	}
+	if id.RouteToDatabase.Database != "" {
+		subject.ExtraNames = append(subject.ExtraNames,
+			pkix.AttributeTypeAndValue{
+				Type:  DatabaseNameASN1ExtensionOID,
+				Value: id.RouteToDatabase.Database,
 			})
 	}
 
@@ -381,12 +424,27 @@ func FromSubject(subject pkix.Name, expires time.Time) (*Identity, error) {
 		case attr.Type.Equal(DatabaseServiceNameASN1ExtensionOID):
 			val, ok := attr.Value.(string)
 			if ok {
-				id.RouteToDatabase.DatabaseName = val
+				id.RouteToDatabase.ServiceName = val
 			}
 		case attr.Type.Equal(DatabaseClusterNameASN1ExtensionOID):
 			val, ok := attr.Value.(string)
 			if ok {
 				id.RouteToDatabase.ClusterName = val
+			}
+		case attr.Type.Equal(DatabaseProtocolASN1ExtensionOID):
+			val, ok := attr.Value.(string)
+			if ok {
+				id.RouteToDatabase.Protocol = val
+			}
+		case attr.Type.Equal(DatabaseUsernameASN1ExtensionOID):
+			val, ok := attr.Value.(string)
+			if ok {
+				id.RouteToDatabase.Username = val
+			}
+		case attr.Type.Equal(DatabaseNameASN1ExtensionOID):
+			val, ok := attr.Value.(string)
+			if ok {
+				id.RouteToDatabase.Database = val
 			}
 		case attr.Type.Equal(DatabaseNamesASN1ExtensionOID):
 			val, ok := attr.Value.(string)

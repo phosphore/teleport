@@ -245,7 +245,7 @@ func (s *ProxyServer) pickDatabaseServer(ctx context.Context, identity tlsca.Ide
 	// connecting to using routing information from identity.
 	for _, server := range dbServers {
 		for _, db := range server.GetDatabases() {
-			if db.Name == identity.RouteToDatabase.DatabaseName {
+			if db.Name == identity.RouteToDatabase.ServiceName {
 				// TODO(r0mant): Return all matching servers and round-robin
 				// between them.
 				return site, server, db, nil
@@ -253,7 +253,7 @@ func (s *ProxyServer) pickDatabaseServer(ctx context.Context, identity tlsca.Ide
 		}
 	}
 	return nil, nil, nil, trace.NotFound("database %q not found among registered database servers on cluster %q",
-		identity.RouteToDatabase.DatabaseName,
+		identity.RouteToDatabase.ServiceName,
 		identity.RouteToDatabase.ClusterName)
 }
 

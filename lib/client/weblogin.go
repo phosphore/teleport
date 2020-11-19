@@ -113,8 +113,6 @@ type CreateSSHCertReq struct {
 	// KubernetesCluster is an optional k8s cluster name to route the response
 	// credentials to.
 	KubernetesCluster string
-	// RouteToDatabase is the database name to route requests to.
-	RouteToDatabase string
 }
 
 // CreateSSHCertWithU2FReq are passed by web client
@@ -139,8 +137,6 @@ type CreateSSHCertWithU2FReq struct {
 	// KubernetesCluster is an optional k8s cluster name to route the response
 	// credentials to.
 	KubernetesCluster string
-	// RouteToDatabase is the database name to route requests to.
-	RouteToDatabase string
 }
 
 // PingResponse contains data about the Teleport server like supported
@@ -176,8 +172,6 @@ type SSHLogin struct {
 	// KubernetesCluster is an optional k8s cluster name to route the response
 	// credentials to.
 	KubernetesCluster string
-	// RouteToDatabase is the database proxy server to route requests to.
-	RouteToDatabase string
 }
 
 // SSHLoginSSO contains SSH login parameters for SSO login.
@@ -480,7 +474,6 @@ func SSHAgentLogin(ctx context.Context, login SSHLoginDirect) (*auth.SSHLoginRes
 		Compatibility:     login.Compatibility,
 		RouteToCluster:    login.RouteToCluster,
 		KubernetesCluster: login.KubernetesCluster,
-		RouteToDatabase:   login.RouteToDatabase,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -586,7 +579,6 @@ func SSHAgentU2FLogin(ctx context.Context, login SSHLoginU2F) (*auth.SSHLoginRes
 		Compatibility:     login.Compatibility,
 		RouteToCluster:    login.RouteToCluster,
 		KubernetesCluster: login.KubernetesCluster,
-		RouteToDatabase:   login.RouteToDatabase,
 	})
 	if err != nil {
 		return nil, trace.Wrap(err)

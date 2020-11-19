@@ -208,9 +208,10 @@ type Config struct {
 	// cluster every time) but unspecified logic.
 	KubernetesCluster string
 
-	// DatabaseName specifies name of the database proxy server to issue
+	// DatabaseService specifies name of the database proxy server to issue
 	// certificate for.
-	DatabaseName string
+	// TODO(r0mant): Do we really need this field as part of Teleport client?
+	DatabaseService string
 
 	// LocalForwardPorts are the local ports tsh listens on for port forwarding
 	// (parameters to -L ssh flag).
@@ -531,8 +532,8 @@ func readProfile(profileDir string, profileName string) (*ProfileStatus, error) 
 		if err != nil {
 			return nil, trace.Wrap(err)
 		}
-		if tlsID.RouteToDatabase.DatabaseName != "" {
-			databases = append(databases, tlsID.RouteToDatabase.DatabaseName)
+		if tlsID.RouteToDatabase.ServiceName != "" {
+			databases = append(databases, tlsID.RouteToDatabase.ServiceName)
 		}
 	}
 
@@ -1594,10 +1595,10 @@ func (tc *TeleportClient) ListDatabaseServers(ctx context.Context) ([]services.S
 }
 
 // ListDatabaseServersFor returns all servers that proxy the specified database.
-func (tc *TeleportClient) ListDatabaseServersFor(ctx context.Context, dbName string) ([]services.Server, error) {
+func (tc *TeleportClient) ListDatabaseServersFor(ctx context.Context, dbName string) ([]services.Server, *services.Database, error) {
 	proxyClient, err := tc.ConnectToProxy(ctx)
 	if err != nil {
-		return nil, trace.Wrap(err)
+		return nil, nil, trace.Wrap(err)
 	}
 	defer proxyClient.Close()
 	return proxyClient.GetDatabaseServersFor(ctx, tc.Namespace, dbName)
@@ -1916,8 +1917,8 @@ func (tc *TeleportClient) Login(ctx context.Context) (*Key, error) {
 	if tc.KubernetesCluster != "" {
 		key.KubeTLSCerts[tc.KubernetesCluster] = response.TLSCert
 	}
-	if tc.DatabaseName != "" {
-		key.DBTLSCerts[tc.DatabaseName] = response.TLSCert
+	if tc.DatabaseService != "" {
+		key.DBTLSCerts[tc.DatabaseService] = response.TLSCert
 	}
 	key.ProxyHost = webProxyHost
 	key.TrustedCA = response.HostSigners
@@ -2270,7 +2271,6 @@ func (tc *TeleportClient) directLogin(ctx context.Context, secondFactorType stri
 			Compatibility:     tc.CertificateFormat,
 			RouteToCluster:    tc.SiteName,
 			KubernetesCluster: tc.KubernetesCluster,
-			RouteToDatabase:   tc.DatabaseName,
 		},
 		User:     tc.Config.Username,
 		Password: password,
@@ -2294,7 +2294,6 @@ func (tc *TeleportClient) ssoLogin(ctx context.Context, connectorID string, pub 
 			Compatibility:     tc.CertificateFormat,
 			RouteToCluster:    tc.SiteName,
 			KubernetesCluster: tc.KubernetesCluster,
-			RouteToDatabase:   tc.DatabaseName,
 		},
 		ConnectorID: connectorID,
 		Protocol:    protocol,
@@ -2327,7 +2326,6 @@ func (tc *TeleportClient) u2fLogin(ctx context.Context, pub []byte) (*auth.SSHLo
 			Compatibility:     tc.CertificateFormat,
 			RouteToCluster:    tc.SiteName,
 			KubernetesCluster: tc.KubernetesCluster,
-			RouteToDatabase:   tc.DatabaseName,
 		},
 		User:     tc.Config.Username,
 		Password: password,

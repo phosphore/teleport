@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gravitational/teleport/lib/auth/proto"
 	"github.com/gravitational/teleport/lib/client"
 	"github.com/gravitational/teleport/lib/client/pgservicefile"
 	"github.com/gravitational/teleport/lib/services"
@@ -61,8 +62,9 @@ func onDatabaseLogin(cf *CLIConf) {
 		utils.FatalError(err)
 	}
 	var servers []services.Server
+	var db *services.Database
 	err = client.RetryWithRelogin(cf.Context, tc, func() error {
-		servers, err = tc.ListDatabaseServersFor(cf.Context, tc.DatabaseName)
+		servers, db, err = tc.ListDatabaseServersFor(cf.Context, tc.DatabaseService)
 		return trace.Wrap(err)
 	})
 	if err != nil {
@@ -70,7 +72,7 @@ func onDatabaseLogin(cf *CLIConf) {
 	}
 	if len(servers) == 0 {
 		utils.FatalError(trace.NotFound(
-			"database %q not found, use 'tsh db ls' to see registered databases", tc.DatabaseName))
+			"database %q not found, use 'tsh db ls' to see registered databases", tc.DatabaseService))
 	}
 	// Retrieve the current profile to see if it has any active role requests.
 	profile, err := client.StatusCurrent("", cf.Proxy)
@@ -79,12 +81,17 @@ func onDatabaseLogin(cf *CLIConf) {
 	}
 	// Obtain certificate with the database name encoded in it.
 	log.Debugf("Requesting TLS certificate for database %q on cluster %q.",
-		tc.DatabaseName, tc.SiteName)
+		tc.DatabaseService, tc.SiteName)
 	err = client.RetryWithRelogin(cf.Context, tc, func() error {
 		return tc.ReissueUserCerts(cf.Context, client.ReissueParams{
-			RouteToCluster:  tc.SiteName,
-			RouteToDatabase: tc.DatabaseName,
-			AccessRequests:  profile.ActiveRequests.AccessRequests,
+			RouteToCluster: tc.SiteName,
+			RouteToDatabase: proto.RouteToDatabase{
+				ServiceName: tc.DatabaseService,
+				Protocol:    db.Protocol,
+				Username:    cf.DatabaseUser,
+				Database:    cf.DatabaseName,
+			},
+			AccessRequests: profile.ActiveRequests.AccessRequests,
 		})
 	})
 	if err != nil {
@@ -96,7 +103,7 @@ func onDatabaseLogin(cf *CLIConf) {
 	if err != nil {
 		utils.FatalError(err)
 	}
-	err = pgservicefile.Add(tc.DatabaseName, profile)
+	err = pgservicefile.Add(tc.DatabaseService, cf.DatabaseUser, cf.DatabaseName, profile)
 	if err != nil {
 		utils.FatalError(err)
 	}
@@ -114,21 +121,21 @@ func onDatabaseLogout(cf *CLIConf) {
 	}
 	var logout []string
 	// If database name wasn't given on the command line, log out of all.
-	if tc.DatabaseName == "" {
+	if tc.DatabaseService == "" {
 		logout = profile.Databases
 	} else {
 		var found bool
 		for _, db := range profile.Databases {
-			if db == tc.DatabaseName {
+			if db == tc.DatabaseService {
 				found = true
 				break
 			}
 		}
 		if !found {
 			utils.FatalError(trace.BadParameter("Not logged in database %q",
-				tc.DatabaseName))
+				tc.DatabaseService))
 		}
-		logout = []string{tc.DatabaseName}
+		logout = []string{tc.DatabaseService}
 	}
 	for _, db := range logout {
 		// Remove database access certificate from ~/.tsh/keys for the
@@ -156,7 +163,7 @@ func onDatabaseEnv(cf *CLIConf) {
 	if len(profile.Databases) == 0 {
 		utils.FatalError(trace.BadParameter("Please login using 'tsh db login' first"))
 	}
-	database := cf.DatabaseName
+	database := cf.DatabaseService
 	if database == "" {
 		if len(profile.Databases) > 1 {
 			utils.FatalError(trace.BadParameter("Multiple databases are available (%v), please select the one to print environment for via --db flag",

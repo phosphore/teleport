@@ -96,8 +96,10 @@ func TestKubeExtensions(t *testing.T) {
 		KubernetesCluster: "kube-cluster",
 		TeleportCluster:   "tele-cluster",
 		RouteToDatabase: RouteToDatabase{
-			DatabaseName: "postgres-rds",
-			ClusterName:  "root",
+			ServiceName: "postgres-rds",
+			ClusterName: "root",
+			Protocol:    "postgres",
+			Username:    "postgres",
 		},
 		DatabaseNames: []string{"postgres", "main"},
 		DatabaseUsers: []string{"postgres", "alice"},
