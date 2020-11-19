@@ -408,8 +408,8 @@ func (o withKubeCerts) deleteKey(dirPath, username string) error {
 	return nil
 }
 
-// WithDBCerts returns a GetKeyOption to load database access certificates from
-// the store for a given Teleport cluster.
+// WithDBCerts returns a GetKeyOption to load database access certificates
+// from the store for a given Teleport cluster.
 func WithDBCerts(teleportClusterName, dbName string) KeyOption {
 	return withDBCerts{teleportClusterName: teleportClusterName, dbName: dbName}
 }

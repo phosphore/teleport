@@ -72,14 +72,19 @@ func onDatabaseLogin(cf *CLIConf) {
 		utils.FatalError(trace.NotFound(
 			"database %q not found, use 'tsh db ls' to see registered databases", tc.DatabaseName))
 	}
+	// Retrieve the current profile to see if it has any active role requests.
+	profile, err := client.StatusCurrent("", cf.Proxy)
+	if err != nil {
+		utils.FatalError(err)
+	}
 	// Obtain certificate with the database name encoded in it.
 	log.Debugf("Requesting TLS certificate for database %q on cluster %q.",
 		tc.DatabaseName, tc.SiteName)
 	err = client.RetryWithRelogin(cf.Context, tc, func() error {
-		// TODO(r0mant): Preserve active role requests?
 		return tc.ReissueUserCerts(cf.Context, client.ReissueParams{
 			RouteToCluster:  tc.SiteName,
 			RouteToDatabase: tc.DatabaseName,
+			AccessRequests:  profile.ActiveRequests.AccessRequests,
 		})
 	})
 	if err != nil {
@@ -87,7 +92,7 @@ func onDatabaseLogin(cf *CLIConf) {
 	}
 	// Refresh the profile and save Postgres connection profile.
 	// TODO(r0mant): This needs to become db-specific.
-	profile, err := client.StatusCurrent("", cf.Proxy)
+	profile, err = client.StatusCurrent("", cf.Proxy)
 	if err != nil {
 		utils.FatalError(err)
 	}
