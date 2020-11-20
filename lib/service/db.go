@@ -21,6 +21,7 @@ import (
 	"github.com/gravitational/teleport/lib/auth"
 	"github.com/gravitational/teleport/lib/cache"
 	"github.com/gravitational/teleport/lib/defaults"
+	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/reversetunnel"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/srv/db"
@@ -123,11 +124,27 @@ func (process *TeleportProcess) initDatabaseService() error {
 		return trace.Wrap(err)
 	}
 
+	asyncEmitter, err := process.newAsyncEmitter(conn.Client)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	streamer, err := events.NewCheckingStreamer(events.CheckingStreamerConfig{
+		Inner: conn.Client,
+		Clock: process.Clock,
+	})
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
 	// Create and start the database server which will also start dynamic labels.
 	dbServer, err := db.New(process.ExitContext(), db.Config{
-		DataDir:      process.Config.DataDir,
-		AuthClient:   conn.Client,
-		AccessPoint:  accessPoint,
+		DataDir:     process.Config.DataDir,
+		AuthClient:  conn.Client,
+		AccessPoint: accessPoint,
+		StreamEmitter: &events.StreamerAndEmitter{
+			Emitter:  asyncEmitter,
+			Streamer: streamer,
+		},
 		Authorizer:   authorizer,
 		TLSConfig:    tlsConfig,
 		CipherSuites: process.Config.CipherSuites,

@@ -37,6 +37,7 @@ func (s *Server) newStreamWriter(sessionID string) (events.StreamWriter, error) 
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	// TODO(r0mant): Add support for record-at-proxy.
 	// Create a sync or async streamer depending on configuration of cluster.
 	streamer, err := s.newStreamer(s.closeContext, sessionID, clusterConfig)
 	if err != nil {
@@ -52,7 +53,7 @@ func (s *Server) newStreamWriter(sessionID string) (events.StreamWriter, error) 
 		Namespace:    defaults.Namespace,
 		ServerID:     s.Server.GetName(),
 		RecordOutput: clusterConfig.GetSessionRecording() != services.RecordOff,
-		Component:    teleport.ComponentApp,
+		Component:    teleport.ComponentDB,
 	})
 }
 
@@ -74,15 +75,14 @@ func (s *Server) newStreamer(ctx context.Context, sessionID string, clusterConfi
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	return fileStreamer, nil
+	return events.NewTeeStreamer(fileStreamer, s.StreamEmitter), nil
 }
 
 // emitSessionStartEventFn returns function that uses the provided emitter to
 // emit an audit event when database session starts.
 func (s *Server) emitSessionStartEventFn(streamWriter events.StreamWriter) func(sessionContext) error {
 	return func(session sessionContext) error {
-		// TODO(r0mant): Use streamWriter.
-		return s.AuthClient.EmitAuditEvent(s.closeContext, &events.DatabaseSessionStart{
+		return streamWriter.EmitAuditEvent(s.closeContext, &events.DatabaseSessionStart{
 			Metadata: events.Metadata{
 				Type: events.DatabaseSessionStartEvent,
 				Code: events.DatabaseSessionStartCode,
@@ -112,8 +112,7 @@ func (s *Server) emitSessionStartEventFn(streamWriter events.StreamWriter) func(
 // emit an audit event when database session ends.
 func (s *Server) emitSessionEndEventFn(streamWriter events.StreamWriter) func(sessionContext) error {
 	return func(session sessionContext) error {
-		// TODO(r0mant): Use streamWriter.
-		return s.AuthClient.EmitAuditEvent(s.closeContext, &events.DatabaseSessionEnd{
+		return streamWriter.EmitAuditEvent(s.closeContext, &events.DatabaseSessionEnd{
 			Metadata: events.Metadata{
 				Type: events.DatabaseSessionEndEvent,
 				Code: events.DatabaseSessionEndCode,
@@ -139,8 +138,7 @@ func (s *Server) emitSessionEndEventFn(streamWriter events.StreamWriter) func(se
 // an audit event when a database query is executed.
 func (s *Server) emitQueryEventFn(streamWriter events.StreamWriter) func(sessionContext, string) error {
 	return func(session sessionContext, query string) error {
-		// TODO(r0mant): Use streamWriter.
-		return s.AuthClient.EmitAuditEvent(s.closeContext, &events.DatabaseQuery{
+		return streamWriter.EmitAuditEvent(s.closeContext, &events.DatabaseQuery{
 			Metadata: events.Metadata{
 				Type: events.DatabaseQueryEvent,
 				Code: events.DatabaseQueryCode,

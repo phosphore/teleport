@@ -53,6 +53,8 @@ type Config struct {
 	AuthClient *auth.Client
 	// AccessPoint is a caching client connected to the Auth Server.
 	AccessPoint auth.AccessPoint
+	// StreamEmitter is a non-blocking audit events emitter.
+	StreamEmitter events.StreamEmitter
 	// TLSConfig is the *tls.Config for this server.
 	TLSConfig *tls.Config
 	// CipherSuites is the list of TLS cipher suites that have been configured
@@ -84,6 +86,9 @@ func (c *Config) CheckAndSetDefaults() error {
 	}
 	if c.AccessPoint == nil {
 		return trace.BadParameter("access point missing")
+	}
+	if c.StreamEmitter == nil {
+		return trace.BadParameter("stream emitter missing")
 	}
 	if c.TLSConfig == nil {
 		return trace.BadParameter("tls config missing")
@@ -304,7 +309,7 @@ func (s *Server) HandleConnection(conn net.Conn) {
 	}
 	// Now that the handshake has completed and the client has sent us a
 	// certificate, extract identity information from it.
-	ctx, err := s.middleware.WrapContext(context.TODO(), tlsConn)
+	ctx, err := s.middleware.WrapContext(context.Background(), tlsConn)
 	if err != nil {
 		s.WithError(err).Error("Failed to extract identity from connection.")
 		return
@@ -327,6 +332,20 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
+	defer func() {
+		// Closing the stream writer is needed to flush all recorded data
+		// and trigger upload. Do it in a goroutine since depending on
+		// session size it can take a while and we don't want to block
+		// the client.
+		go func() {
+			// Use the server closing context to make sure that upload
+			// continues beyond the session lifetime.
+			err := streamWriter.Close(s.closeContext)
+			if err != nil {
+				sessionCtx.log.WithError(err).Warn("Failed to close stream writer.")
+			}
+		}()
+	}()
 	engine, err := s.dispatch(sessionCtx, streamWriter)
 	if err != nil {
 		return trace.Wrap(err)
@@ -350,10 +369,7 @@ func (s *Server) dispatch(sessionCtx *sessionContext, streamWriter events.Stream
 			onSessionEnd:   s.emitSessionEndEventFn(streamWriter),
 			onQuery:        s.emitQueryEventFn(streamWriter),
 			clock:          s.Clock,
-			FieldLogger: s.Entry.WithFields(logrus.Fields{
-				"id": sessionCtx.id,
-				"db": sessionCtx.db.Name,
-			}),
+			FieldLogger:    sessionCtx.log,
 		}, nil
 	}
 	return nil, trace.BadParameter("unsupported database procotol %q",
@@ -383,10 +399,15 @@ func (s *Server) authorize(ctx context.Context) (*sessionContext, error) {
 		}
 	}
 	s.Debugf("Will connect to database %q at %v.", db.Name, db.URI)
+	id := uuid.New()
 	return &sessionContext{
-		id:       uuid.New(),
+		id:       id,
 		db:       db,
 		identity: identity,
 		checker:  authContext.Checker,
+		log: s.WithFields(logrus.Fields{
+			"id": id,
+			"db": db.Name,
+		}),
 	}, nil
 }

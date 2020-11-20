@@ -21,6 +21,8 @@ import (
 
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/tlsca"
+
+	"github.com/sirupsen/logrus"
 )
 
 // sessionContext contains information about a database session.
@@ -37,6 +39,8 @@ type sessionContext struct {
 	dbUser string
 	// dbName is the requested database name.
 	dbName string
+	// log is the logger with session specific fields.
+	log logrus.FieldLogger
 }
 
 // String returns string representation of the session parameters.

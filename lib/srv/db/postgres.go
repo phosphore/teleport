@@ -291,10 +291,10 @@ func (e *postgresEngine) connect(ctx context.Context, sessionCtx *sessionContext
 	if err != nil {
 		return nil, nil, trace.Wrap(err)
 	}
-	// TODO(r0mant): Instead of using pgconn to connect, in future it will be
-	// better to reimplement the connect logic which will give us more control
-	// over the initial startup and ability to relay authentication messages
-	// b/w server and client e.g. to get client's password.
+	// TODO(r0mant): Instead of using pgconn to connect, in future it might
+	// make sense to reimplement the connect logic which will give us more
+	// control over the initial startup and ability to relay authentication
+	// messages b/w server and client e.g. to get client's password.
 	conn, err := pgconn.ConnectConfig(ctx, connectConfig)
 	if err != nil {
 		return nil, nil, trace.Wrap(err)
@@ -318,9 +318,10 @@ func (e *postgresEngine) makeClientReady(client *pgproto3.Backend, hijackedConn 
 	if err := client.Send(&pgproto3.AuthenticationOk{}); err != nil {
 		return trace.Wrap(err)
 	}
-	// TODO(r0mant): Fix this so CancelRequest works.
-	e.Debug("Sending BackendKeyData.")
-	if err := client.Send(&pgproto3.BackendKeyData{ProcessID: 123, SecretKey: 456}); err != nil {
+	// BackendKeyData provides secret-key data that the frontend must save
+	// if it wants to be able to issue cancel requests later.
+	e.Debugf("Sending BackendKeyData: PID=%v.", hijackedConn.PID)
+	if err := client.Send(&pgproto3.BackendKeyData{ProcessID: hijackedConn.PID, SecretKey: hijackedConn.SecretKey}); err != nil {
 		return trace.Wrap(err)
 	}
 	// ParameterStatuses contains parameters reported by the server such as
@@ -331,7 +332,8 @@ func (e *postgresEngine) makeClientReady(client *pgproto3.Backend, hijackedConn 
 			return trace.Wrap(err)
 		}
 	}
-	// ReadyForQuery indicates that the server is ready to accept messages.
+	// ReadyForQuery indicates that the start-up is completed and the
+	// frontend can now issue commands.
 	e.Debug("Sending ReadyForQuery")
 	if err := client.Send(&pgproto3.ReadyForQuery{}); err != nil {
 		return trace.Wrap(err)
