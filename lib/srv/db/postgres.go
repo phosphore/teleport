@@ -86,7 +86,8 @@ func (p *postgresProxy) handleConnection(ctx context.Context, clientConn net.Con
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	err = p.proxyToSite(tlsConn, siteConn, startupMessage)
+	defer siteConn.Close()
+	err = p.proxyToSite(ctx, tlsConn, siteConn, startupMessage)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -141,7 +142,7 @@ func (p *postgresProxy) handleStartup(ctx context.Context, clientConn net.Conn) 
 
 // proxyToSite starts proxying all traffic received from Postgres client
 // between this proxy and Teleport database service over reverse tunnel.
-func (p *postgresProxy) proxyToSite(clientConn, siteConn net.Conn, startupMessage *pgproto3.StartupMessage) error {
+func (p *postgresProxy) proxyToSite(ctx context.Context, clientConn, siteConn net.Conn, startupMessage *pgproto3.StartupMessage) error {
 	// Frontend acts as a client for the Posgres wire protocol.
 	frontend := pgproto3.NewFrontend(pgproto3.NewChunkReader(siteConn), siteConn)
 	// Pass the startup message along to the Teleport database server.
@@ -149,13 +150,27 @@ func (p *postgresProxy) proxyToSite(clientConn, siteConn net.Conn, startupMessag
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	go io.Copy(siteConn, clientConn)
-	_, err = io.Copy(clientConn, siteConn)
-	if err != nil {
-		return trace.Wrap(err)
+	errCh := make(chan error, 2)
+	go func() {
+		_, err := io.Copy(siteConn, clientConn)
+		errCh <- trace.Wrap(err, "failed proxying from client to site")
+	}()
+	go func() {
+		_, err := io.Copy(clientConn, siteConn)
+		errCh <- trace.Wrap(err, "failed proxying from site to client")
+	}()
+	var errs []error
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-errCh:
+			if err != nil && err != io.EOF {
+				p.WithError(err).Warn("Connection problem.")
+			}
+		case <-ctx.Done():
+			return trace.ConnectionProblem(nil, "context is closing")
+		}
 	}
-	// TODO(r0mant): Add error handling.
-	return nil
+	return trace.NewAggregate(errs...)
 }
 
 type postgresEngine struct {

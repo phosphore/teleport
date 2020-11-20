@@ -113,28 +113,23 @@ func (s *ProxyServer) Serve(listener net.Listener) error {
 		// The connection is expected to come through via multiplexer.
 		clientConn, err := listener.Accept()
 		if err != nil {
-			s.WithError(err).Error("Failed to accept connection.")
+			s.WithError(err).Error("Failed to accept client connection.")
 			continue
 		}
 		// The multiplexed connection contains information about detected
 		// protocol so dispatch to the appropriate proxy.
 		proxy, err := s.dispatch(clientConn)
 		if err != nil {
-			s.WithError(err).Error("Failed to dispatch connection.")
+			s.WithError(err).Error("Failed to dispatch client connection.")
 			continue
 		}
 		// Let the appropriate proxy handle the connection and go back
 		// to listening.
 		go func() {
-			defer func() {
-				err := clientConn.Close()
-				if err != nil {
-					s.WithError(err).Error("Failed to close connection.")
-				}
-			}()
+			defer clientConn.Close()
 			err := proxy.handleConnection(s.closeCtx, clientConn)
 			if err != nil {
-				s.WithError(err).Error("Failed to handle connection.")
+				s.WithError(err).Error("Failed to handle client connection.")
 			}
 		}()
 	}
