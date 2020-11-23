@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 
 	"github.com/gravitational/teleport/lib/auth"
 	"github.com/gravitational/teleport/lib/auth/native"
@@ -63,7 +64,7 @@ type postgresProxy struct {
 	tlsConfig     *tls.Config
 	middleware    *auth.Middleware
 	connectToSite func(context.Context) (net.Conn, error)
-	logrus.FieldLogger
+	log           logrus.FieldLogger
 }
 
 func (p *postgresProxy) handleConnection(ctx context.Context, clientConn net.Conn) (err error) {
@@ -74,7 +75,7 @@ func (p *postgresProxy) handleConnection(ctx context.Context, clientConn net.Con
 	defer func() {
 		if err != nil {
 			if err := backend.Send(toErrorResponse(err)); err != nil {
-				p.WithError(err).Error("Failed to send error to backend.")
+				p.log.WithError(err).Warn("Failed to send error to backend.")
 			}
 		}
 	}()
@@ -106,7 +107,7 @@ func (p *postgresProxy) handleStartup(ctx context.Context, clientConn net.Conn) 
 	if err != nil {
 		return nil, nil, nil, trace.Wrap(err)
 	}
-	p.Debugf("Received startup message: %#v.", startupMessage)
+	p.log.Debugf("Received startup message: %#v.", startupMessage)
 	// When initiating an encrypted connection, psql will first check with
 	// the server whether it supports TLS by sending an SSLRequest message.
 	//
@@ -152,19 +153,26 @@ func (p *postgresProxy) proxyToSite(ctx context.Context, clientConn, siteConn ne
 	}
 	errCh := make(chan error, 2)
 	go func() {
+		defer p.log.Debug("Stop proxying from client to site.")
+		defer siteConn.Close()
+		defer clientConn.Close()
 		_, err := io.Copy(siteConn, clientConn)
-		errCh <- trace.Wrap(err, "failed proxying from client to site")
+		errCh <- err
 	}()
 	go func() {
+		defer p.log.Debug("Stop proxying from site to client.")
+		defer siteConn.Close()
+		defer clientConn.Close()
 		_, err := io.Copy(clientConn, siteConn)
-		errCh <- trace.Wrap(err, "failed proxying from site to client")
+		errCh <- err
 	}()
 	var errs []error
 	for i := 0; i < 2; i++ {
 		select {
 		case err := <-errCh:
-			if err != nil && err != io.EOF {
-				p.WithError(err).Warn("Connection problem.")
+			if err != nil && err != io.EOF && !strings.Contains(err.Error(), "use of closed network connection") {
+				p.log.WithError(err).Warn("Connection problem.")
+				errs = append(errs, err)
 			}
 		case <-ctx.Done():
 			return trace.ConnectionProblem(nil, "context is closing")
@@ -182,7 +190,7 @@ type postgresEngine struct {
 	onSessionEnd   func(sessionContext) error
 	onQuery        func(sessionContext, string) error
 	clock          clockwork.Clock
-	logrus.FieldLogger
+	log            logrus.FieldLogger
 }
 
 // toErrorResponse converts the provided error to a Postgres wire protocol
@@ -214,7 +222,7 @@ func (e *postgresEngine) handleConnection(ctx context.Context, sessionCtx *sessi
 	defer func() {
 		if err != nil {
 			if err := client.Send(toErrorResponse(err)); err != nil {
-				e.WithError(err).Error("Failed to send error to client.")
+				e.log.WithError(err).Error("Failed to send error to client.")
 			}
 		}
 	}()
@@ -246,7 +254,7 @@ func (e *postgresEngine) handleConnection(ctx context.Context, sessionCtx *sessi
 	defer func() {
 		err := e.onSessionEnd(*sessionCtx)
 		if err != nil {
-			e.Error("Failed to emit audit event.")
+			e.log.Error("Failed to emit audit event.")
 		}
 	}()
 	serverConn, err := pgconn.Construct(hijackedConn)
@@ -256,7 +264,7 @@ func (e *postgresEngine) handleConnection(ctx context.Context, sessionCtx *sessi
 	defer func() {
 		err = serverConn.Close(ctx)
 		if err != nil {
-			e.Error("Failed to close connection.")
+			e.log.Error("Failed to close connection.")
 		}
 	}()
 	// Now launch the message exchange relaying all intercepted messages b/w
@@ -267,11 +275,11 @@ func (e *postgresEngine) handleConnection(ctx context.Context, sessionCtx *sessi
 	go e.receiveFromServer(server, client, serverConn, serverErrCh, sessionCtx)
 	select {
 	case err := <-clientErrCh:
-		e.WithError(err).Debug("Client done.")
+		e.log.WithError(err).Debug("Client done.")
 	case err := <-serverErrCh:
-		e.WithError(err).Debug("Server done.")
+		e.log.WithError(err).Debug("Server done.")
 	case <-ctx.Done():
-		e.Debug("Context canceled.")
+		e.log.Debug("Context canceled.")
 	}
 	return nil
 }
@@ -283,7 +291,7 @@ func (e *postgresEngine) handleStartup(client *pgproto3.Backend, sessionCtx *ses
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	e.Debugf("Received startup message: %#v.", startupMessageI)
+	e.log.Debugf("Received startup message: %#v.", startupMessageI)
 	startupMessage, ok := startupMessageI.(*pgproto3.StartupMessage)
 	if !ok {
 		return trace.BadParameter("expected *pgproto3.StartupMessage, got %T", startupMessageI)
@@ -329,19 +337,19 @@ func (e *postgresEngine) connect(ctx context.Context, sessionCtx *sessionContext
 // server is ready to accept messages from it.
 func (e *postgresEngine) makeClientReady(client *pgproto3.Backend, hijackedConn *pgconn.HijackedConn) error {
 	// AuthenticationOk indicates that the authentication was successful.
-	e.Debug("Sending AuthenticationOk.")
+	e.log.Debug("Sending AuthenticationOk.")
 	if err := client.Send(&pgproto3.AuthenticationOk{}); err != nil {
 		return trace.Wrap(err)
 	}
 	// BackendKeyData provides secret-key data that the frontend must save
 	// if it wants to be able to issue cancel requests later.
-	e.Debugf("Sending BackendKeyData: PID=%v.", hijackedConn.PID)
+	e.log.Debugf("Sending BackendKeyData: PID=%v.", hijackedConn.PID)
 	if err := client.Send(&pgproto3.BackendKeyData{ProcessID: hijackedConn.PID, SecretKey: hijackedConn.SecretKey}); err != nil {
 		return trace.Wrap(err)
 	}
 	// ParameterStatuses contains parameters reported by the server such as
 	// server version, relay them back to the client.
-	e.Debugf("Sending ParameterStatuses: %v.", hijackedConn.ParameterStatuses)
+	e.log.Debugf("Sending ParameterStatuses: %v.", hijackedConn.ParameterStatuses)
 	for k, v := range hijackedConn.ParameterStatuses {
 		if err := client.Send(&pgproto3.ParameterStatus{Name: k, Value: v}); err != nil {
 			return trace.Wrap(err)
@@ -349,7 +357,7 @@ func (e *postgresEngine) makeClientReady(client *pgproto3.Backend, hijackedConn 
 	}
 	// ReadyForQuery indicates that the start-up is completed and the
 	// frontend can now issue commands.
-	e.Debug("Sending ReadyForQuery")
+	e.log.Debug("Sending ReadyForQuery")
 	if err := client.Send(&pgproto3.ReadyForQuery{}); err != nil {
 		return trace.Wrap(err)
 	}
@@ -360,7 +368,7 @@ func (e *postgresEngine) makeClientReady(client *pgproto3.Backend, hijackedConn 
 // in turn receives them from psql or other client) and relays them to
 // the frontend connected to the database instance.
 func (e *postgresEngine) receiveFromClient(client *pgproto3.Backend, server *pgproto3.Frontend, clientErrCh chan<- error, sessionCtx *sessionContext) {
-	log := e.WithField("from", "client")
+	log := e.log.WithField("from", "client")
 	defer log.Debug("Stop receiving from client.")
 	for {
 		message, err := client.Receive()
@@ -393,7 +401,7 @@ func (e *postgresEngine) receiveFromClient(client *pgproto3.Backend, server *pgp
 // is connected to the database instance) and relays them back to the psql
 // or other client via the provided backend.
 func (e *postgresEngine) receiveFromServer(server *pgproto3.Frontend, client *pgproto3.Backend, serverConn *pgconn.PgConn, serverErrCh chan<- error, sessionCtx *sessionContext) {
-	log := e.WithField("from", "server")
+	log := e.log.WithField("from", "server")
 	defer log.Debug("Stop receiving from server.")
 	for {
 		message, err := server.Receive()
@@ -433,6 +441,10 @@ func (e *postgresEngine) getConnectConfig(ctx context.Context, sessionCtx *sessi
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	// Pgconn adds fallbacks to retry connection without TLS if the TLS
+	// attempt fails. Reset the fallbacks to avoid retries, otherwise
+	// it's impossible to debug TLS connection errors.
+	config.Fallbacks = nil
 	// RDS/Aurora use IAM authentication so request an auth token and
 	// use it as a password.
 	if sessionCtx.db.IsAWS() {
@@ -453,7 +465,7 @@ func (e *postgresEngine) getConnectConfig(ctx context.Context, sessionCtx *sessi
 // getAuthToken returns authorization token that will be used as a password
 // when connecting to RDS/Aurora databases.
 func (e *postgresEngine) getAuthToken(sessionCtx *sessionContext) (string, error) {
-	e.Debugf("Generating auth token for %s.", sessionCtx)
+	e.log.Debugf("Generating auth token for %s.", sessionCtx)
 	return rdsutils.BuildAuthToken(
 		sessionCtx.db.URI,
 		sessionCtx.db.AWS.Region,
@@ -487,7 +499,7 @@ func (e *postgresEngine) getTLSConfig(ctx context.Context, sessionCtx *sessionCo
 				return nil, trace.BadParameter("failed to append CA certificate to the pool")
 			}
 		} else {
-			e.Warnf("No RDS CA certificate for %v.", sessionCtx.db)
+			e.log.Warnf("No RDS CA certificate for %v.", sessionCtx.db)
 		}
 	}
 	// RDS/Aurora auth is done via an auth token so don't generate a client
@@ -525,7 +537,7 @@ func (e *postgresEngine) getClientCert(ctx context.Context, sessionCtx *sessionC
 	if err != nil {
 		return nil, nil, trace.Wrap(err)
 	}
-	e.Debugf("Generating client certificate for %s.", sessionCtx)
+	e.log.Debugf("Generating client certificate for %s.", sessionCtx)
 	resp, err := e.authClient.GenerateDatabaseCert(ctx, &proto.DatabaseCertRequest{
 		CSR: csr,
 		TTL: proto.Duration(sessionCtx.identity.Expires.Sub(e.clock.Now())),

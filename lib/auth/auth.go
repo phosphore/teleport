@@ -523,6 +523,34 @@ func (a *Server) GenerateUserAppTestCert(publicKey []byte, username string, ttl 
 	return certs.tls, nil
 }
 
+// GenerateDatabaseTestCert generates a database access certificate for the
+// provided parameters. Used only internally in tests.
+func (a *Server) GenerateDatabaseTestCert(pub []byte, cluster, service, username string, ttl time.Duration) ([]byte, error) {
+	user, err := a.Identity.GetUser(username, false)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	checker, err := services.FetchRoles(user.GetRoles(), a.Access, user.GetTraits())
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	certs, err := a.generateUserCert(certRequest{
+		user:      user,
+		publicKey: pub,
+		checker:   checker,
+		ttl:       ttl,
+		traits: wrappers.Traits(map[string][]string{
+			teleport.TraitLogins: {username},
+		}),
+		routeToCluster: cluster,
+		dbServiceName:  service,
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+	return certs.tls, nil
+}
+
 // generateUserCert generates user certificates
 func (a *Server) generateUserCert(req certRequest) (*certs, error) {
 	// reuse the same RSA keys for SSH and TLS keys

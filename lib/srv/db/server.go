@@ -145,7 +145,8 @@ type Server struct {
 
 // New returns a new application server.
 func New(ctx context.Context, config Config) (*Server, error) {
-	if err := config.CheckAndSetDefaults(); err != nil {
+	err := config.CheckAndSetDefaults()
+	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 
@@ -177,7 +178,7 @@ func New(ctx context.Context, config Config) (*Server, error) {
 	}
 
 	// Create heartbeat loop so databases keep sending presence to auth server.
-	heartbeat, err := srv.NewHeartbeat(srv.HeartbeatConfig{
+	server.heartbeat, err = srv.NewHeartbeat(srv.HeartbeatConfig{
 		Mode:            srv.HeartbeatModeDB,
 		Context:         server.closeContext,
 		Component:       teleport.ComponentDB,
@@ -192,7 +193,6 @@ func New(ctx context.Context, config Config) (*Server, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	server.heartbeat = heartbeat
 
 	return server, nil
 }
@@ -295,7 +295,9 @@ func (s *Server) ForceHeartbeat() error {
 // upgrades it to TLS, extracts identity information from it, performs
 // authorization and dispatches to the appropriate database engine.
 func (s *Server) HandleConnection(conn net.Conn) {
-	s.Debugf("Accepted connection from %v.", conn.RemoteAddr())
+	log := s.WithField("addr", conn.RemoteAddr())
+	log.Debug("Accepted connection.", conn.RemoteAddr())
+	defer conn.Close()
 	// Upgrade the connection to TLS since the other side of the reverse
 	// tunnel connection (proxy) will initiate a handshake.
 	tlsConn := tls.Server(conn, s.TLSConfig)
@@ -304,21 +306,21 @@ func (s *Server) HandleConnection(conn net.Conn) {
 	// reverse tunnel it doesn't happen for some reason.
 	err := tlsConn.Handshake()
 	if err != nil {
-		s.WithError(err).Error("Failed to perform TLS handshake.")
+		log.WithError(err).Error("Failed to perform TLS handshake.")
 		return
 	}
 	// Now that the handshake has completed and the client has sent us a
 	// certificate, extract identity information from it.
 	ctx, err := s.middleware.WrapContext(context.Background(), tlsConn)
 	if err != nil {
-		s.WithError(err).Error("Failed to extract identity from connection.")
+		log.WithError(err).Error("Failed to extract identity from connection.")
 		return
 	}
 	// Dispatch the connection for processing by an appropriate database
 	// service.
 	err = s.handleConnection(ctx, tlsConn)
 	if err != nil {
-		s.WithError(err).Error("Failed to handle connection.")
+		log.WithError(err).Error("Failed to handle connection.")
 		return
 	}
 }
@@ -369,7 +371,7 @@ func (s *Server) dispatch(sessionCtx *sessionContext, streamWriter events.Stream
 			onSessionEnd:   s.emitSessionEndEventFn(streamWriter),
 			onQuery:        s.emitQueryEventFn(streamWriter),
 			clock:          s.Clock,
-			FieldLogger:    sessionCtx.log,
+			log:            sessionCtx.log,
 		}, nil
 	}
 	return nil, trace.BadParameter("unsupported database procotol %q",

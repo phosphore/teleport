@@ -107,12 +107,17 @@ func NewProxyServer(ctx context.Context, config ProxyServerConfig) (*ProxyServer
 
 // Serve starts accepting database connections from the provided listener.
 func (s *ProxyServer) Serve(listener net.Listener) error {
-	defer s.Debug("Exited.")
+	s.Debug("Started database proxy.")
+	defer s.Debug("Database proxy exited.")
 	for {
 		// Accept the connection from the database client, such as psql.
 		// The connection is expected to come through via multiplexer.
 		clientConn, err := listener.Accept()
 		if err != nil {
+			// Indicates closed listener.
+			if trace.IsConnectionProblem(err) {
+				return trace.Wrap(err)
+			}
 			s.WithError(err).Error("Failed to accept client connection.")
 			continue
 		}
@@ -129,7 +134,8 @@ func (s *ProxyServer) Serve(listener net.Listener) error {
 			defer clientConn.Close()
 			err := proxy.handleConnection(s.closeCtx, clientConn)
 			if err != nil {
-				s.WithError(err).Error("Failed to handle client connection.")
+				s.Errorf("Failed to handle client connection: %v.",
+					trace.DebugReport(err))
 			}
 		}()
 	}
@@ -143,12 +149,12 @@ func (s *ProxyServer) dispatch(clientConn net.Conn) (databaseProxy, error) {
 	}
 	switch muxConn.Protocol() {
 	case multiplexer.ProtoPostgres:
-		s.Debugf("Accepted postgres connection from %v.", muxConn.RemoteAddr())
+		s.Debugf("Accepted Postgres connection from %v.", muxConn.RemoteAddr())
 		return &postgresProxy{
 			tlsConfig:     s.TLSConfig,
 			middleware:    s.middleware,
 			connectToSite: s.connectToSite,
-			FieldLogger:   s.FieldLogger,
+			log:           s.FieldLogger,
 		}, nil
 	}
 	return nil, trace.BadParameter("unsupported database protocol %q",

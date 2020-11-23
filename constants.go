@@ -129,6 +129,7 @@ const (
 	ComponentApp = "app:service"
 
 	// ComponentDB is the database proxy service.
+	// TODO(r0mant): Rename to ComponentDatabase.
 	ComponentDB = "db:service"
 
 	// ComponentAppProxy is the application handler within the web proxy service.
