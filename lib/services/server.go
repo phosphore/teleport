@@ -376,6 +376,9 @@ func (s *ServerV2) DeepCopy() Server {
 	return proto.Clone(s).(*ServerV2)
 }
 
+// Merge overwrites r from src and
+// is part of support for cloning Server values
+// using proto.Clone.
 // Implements proto.Merger
 func (r *Rotation) Merge(src proto.Message) {
 	s, ok := src.(*Rotation)
@@ -385,6 +388,9 @@ func (r *Rotation) Merge(src proto.Message) {
 	*r = *s
 }
 
+// Merge overwrites r from src and
+// is part of support for cloning Server values
+// using proto.Clone.
 // Implements proto.Merger
 func (r *Metadata) Merge(src proto.Message) {
 	m, ok := src.(*Metadata)
