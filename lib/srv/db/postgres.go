@@ -29,7 +29,6 @@ import (
 	"github.com/gravitational/teleport/lib/auth"
 	"github.com/gravitational/teleport/lib/auth/native"
 	"github.com/gravitational/teleport/lib/auth/proto"
-	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
@@ -302,8 +301,8 @@ func (e *postgresEngine) handleStartup(client *pgproto3.Backend, sessionCtx *ses
 }
 
 func (e *postgresEngine) checkAccess(sessionCtx *sessionContext) error {
-	return sessionCtx.checker.CheckAccessToDatabase(
-		defaults.Namespace, sessionCtx.dbName, sessionCtx.dbUser, sessionCtx.db)
+	return sessionCtx.checker.CheckAccessToDatabase(sessionCtx.db,
+		sessionCtx.dbName, sessionCtx.dbUser)
 }
 
 // connect establishes the connection to the database instance and returns
@@ -437,7 +436,7 @@ func (e *postgresEngine) getConnectConfig(ctx context.Context, sessionCtx *sessi
 	// string so parse the basic template and then fill in the rest of
 	// parameters such as TLS configuration.
 	config, err := pgconn.ParseConfig(fmt.Sprintf("postgres://%s@%s/?database=%s",
-		sessionCtx.dbUser, sessionCtx.db.URI, sessionCtx.dbName))
+		sessionCtx.dbUser, sessionCtx.db.GetURI(), sessionCtx.dbName))
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -467,8 +466,8 @@ func (e *postgresEngine) getConnectConfig(ctx context.Context, sessionCtx *sessi
 func (e *postgresEngine) getAuthToken(sessionCtx *sessionContext) (string, error) {
 	e.log.Debugf("Generating auth token for %s.", sessionCtx)
 	return rdsutils.BuildAuthToken(
-		sessionCtx.db.URI,
-		sessionCtx.db.AWS.Region,
+		sessionCtx.db.GetURI(),
+		sessionCtx.db.GetRegion(),
 		sessionCtx.dbUser,
 		e.credentials)
 }
@@ -479,7 +478,7 @@ func (e *postgresEngine) getAuthToken(sessionCtx *sessionContext) (string, error
 // authority. For onprem we generate a client certificate signed by the host
 // CA used to authenticate.
 func (e *postgresEngine) getTLSConfig(ctx context.Context, sessionCtx *sessionContext) (*tls.Config, error) {
-	addr, err := utils.ParseAddr(sessionCtx.db.URI)
+	addr, err := utils.ParseAddr(sessionCtx.db.GetURI())
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -489,12 +488,12 @@ func (e *postgresEngine) getTLSConfig(ctx context.Context, sessionCtx *sessionCo
 	}
 	// Add CA certificate to the trusted pool if it's present, e.g. when
 	// connecting to RDS/Aurora which require AWS CA.
-	if len(sessionCtx.db.CACert) != 0 {
-		if !tlsConfig.RootCAs.AppendCertsFromPEM(sessionCtx.db.CACert) {
+	if len(sessionCtx.db.GetCA()) != 0 {
+		if !tlsConfig.RootCAs.AppendCertsFromPEM(sessionCtx.db.GetCA()) {
 			return nil, trace.BadParameter("failed to append CA certificate to the pool")
 		}
 	} else if sessionCtx.db.IsAWS() {
-		if rdsCA, ok := e.rdsCACerts[sessionCtx.db.AWS.Region]; ok {
+		if rdsCA, ok := e.rdsCACerts[sessionCtx.db.GetRegion()]; ok {
 			if !tlsConfig.RootCAs.AppendCertsFromPEM(rdsCA) {
 				return nil, trace.BadParameter("failed to append CA certificate to the pool")
 			}

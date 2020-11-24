@@ -419,13 +419,13 @@ message GetDatabaseServersRequest {
 // GetDatabaseServersResponse contains all registered database servers.
 message GetDatabaseServersResponse {
     // Servers is a list of database proxy servers.
-    repeated services.ServerV2 Servers = 1 [ (gogoproto.jsontag) = "servers" ];
+    repeated services.DatabaseServerV2 Servers = 1 [ (gogoproto.jsontag) = "servers" ];
 }
 
 // UpsertDatabaseServerRequest is a request to register database server.
 message UpsertDatabaseServerRequest {
     // Server is the database proxy server to register.
-    services.ServerV2 Server = 1 [ (gogoproto.jsontag) = "server" ];
+    services.DatabaseServerV2 Server = 1 [ (gogoproto.jsontag) = "server" ];
 }
 
 // DeleteDatabaseServerRequest is a request to delete a database server.

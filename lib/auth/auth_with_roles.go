@@ -2016,7 +2016,7 @@ func (a *ServerWithRoles) ProcessKubeCSR(req KubeCSR) (*KubeCSRResponse, error) 
 }
 
 // GetDatabaseServers returns all registered database servers.
-func (a *ServerWithRoles) GetDatabaseServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.Server, error) {
+func (a *ServerWithRoles) GetDatabaseServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.DatabaseServer, error) {
 	if err := a.action(namespace, services.KindDatabaseServer, services.VerbList); err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -2028,23 +2028,20 @@ func (a *ServerWithRoles) GetDatabaseServers(ctx context.Context, namespace stri
 		return nil, trace.Wrap(err)
 	}
 	// Filter out databases the caller doesn't have access to from each server.
+	var filtered []services.DatabaseServer
 	for _, server := range servers {
-		filtered := make([]*services.Database, 0, len(server.GetDatabases()))
-		for _, database := range server.GetDatabases() {
-			err := a.context.Checker.CheckAccessToDatabaseService(server.GetNamespace(), database)
-			if err != nil && !trace.IsAccessDenied(err) {
-				return nil, trace.Wrap(err)
-			} else if err == nil {
-				filtered = append(filtered, database)
-			}
+		err := a.context.Checker.CheckAccessToDatabaseServer(server)
+		if err != nil && !trace.IsAccessDenied(err) {
+			return nil, trace.Wrap(err)
+		} else if err == nil {
+			filtered = append(filtered, server)
 		}
-		server.SetDatabases(filtered)
 	}
-	return servers, nil
+	return filtered, nil
 }
 
 // UpsertDatabaseServer creates or updates a new database proxy server.
-func (a *ServerWithRoles) UpsertDatabaseServer(ctx context.Context, server services.Server) (*services.KeepAlive, error) {
+func (a *ServerWithRoles) UpsertDatabaseServer(ctx context.Context, server services.DatabaseServer) (*services.KeepAlive, error) {
 	if err := a.action(server.GetNamespace(), services.KindDatabaseServer, services.VerbCreate); err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -2059,7 +2056,7 @@ func (a *ServerWithRoles) DeleteDatabaseServer(ctx context.Context, namespace st
 	if err := a.action(namespace, services.KindDatabaseServer, services.VerbDelete); err != nil {
 		return trace.Wrap(err)
 	}
-	return a.authServer.DeleteAppServer(ctx, namespace, name)
+	return a.authServer.DeleteDatabaseServer(ctx, namespace, name)
 }
 
 // DeleteAllDatabaseServers removes all registered database proxy servers.
@@ -2070,7 +2067,7 @@ func (a *ServerWithRoles) DeleteAllDatabaseServers(ctx context.Context, namespac
 	if err := a.action(namespace, services.KindDatabaseServer, services.VerbDelete); err != nil {
 		return trace.Wrap(err)
 	}
-	return a.authServer.DeleteAllAppServers(ctx, namespace)
+	return a.authServer.DeleteAllDatabaseServers(ctx, namespace)
 }
 
 // SignDatabaseCSR generates a client certificate used by proxy when talking

@@ -52,7 +52,7 @@ type Announcer interface {
 	UpsertAppServer(context.Context, services.Server) (*services.KeepAlive, error)
 
 	// UpsertDatabaseServer registers a database proxy server.
-	UpsertDatabaseServer(context.Context, services.Server) (*services.KeepAlive, error)
+	UpsertDatabaseServer(context.Context, services.DatabaseServer) (*services.KeepAlive, error)
 }
 
 // ReadAccessPoint is an API interface implemented by a certificate authority (CA)
@@ -127,7 +127,7 @@ type ReadAccessPoint interface {
 	GetKubeServices(context.Context) ([]services.Server, error)
 
 	// GetDatabaseServers returns all registered database proxy servers.
-	GetDatabaseServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.Server, error)
+	GetDatabaseServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.DatabaseServer, error)
 }
 
 // AccessPoint is an API interface implemented by a certificate authority (CA)
@@ -280,7 +280,7 @@ func (w *Wrapper) UpsertAppServer(ctx context.Context, server services.Server) (
 }
 
 // UpsertDatabaseServer registers a database proxy server.
-func (w *Wrapper) UpsertDatabaseServer(ctx context.Context, server services.Server) (*services.KeepAlive, error) {
+func (w *Wrapper) UpsertDatabaseServer(ctx context.Context, server services.DatabaseServer) (*services.KeepAlive, error) {
 	return w.NoCache.UpsertDatabaseServer(ctx, server)
 }
 

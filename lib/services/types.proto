@@ -129,6 +129,57 @@ message ResourceHeader {
         [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "metadata,omitempty" ];
 }
 
+// DatabaseServerV2 represents a database access server.
+message DatabaseServerV2 {
+    option (gogoproto.goproto_stringer) = false;
+    option (gogoproto.stringer) = false;
+
+    // Kind is the database server resource kind.
+    string Kind = 1 [ (gogoproto.jsontag) = "kind" ];
+    // SubKind is an optional resource subkind.
+    string SubKind = 2 [ (gogoproto.jsontag) = "sub_kind,omitempty" ];
+    // Version is the resource version.
+    string Version = 3 [ (gogoproto.jsontag) = "version" ];
+    // Metadata is the database server metadata.
+    Metadata Metadata = 4 [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "metadata" ];
+    // Spec is the database server spec.
+    DatabaseServerSpecV2 Spec = 5 [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "spec" ];
+}
+
+// DatabaseServerSpecV2 is the database server spec.
+message DatabaseServerSpecV2 {
+    // Name is the database server identifier.
+    string Name = 1 [ (gogoproto.jsontag) = "name" ];
+    // Description is a free-form text describing this database server.
+    string Description = 2 [ (gogoproto.jsontag) = "description,omitempty" ];
+    // Protocol is the database type e.g. postgres, mysql, etc.
+    string Protocol = 3 [ (gogoproto.jsontag) = "protocol" ];
+    // URI is the database connection address.
+    string URI = 4 [ (gogoproto.jsontag) = "uri" ];
+    // CACert is an optional base64-encoded database CA certificate.
+    bytes CACert = 5 [ (gogoproto.jsontag) = "ca_cert,omitempty" ];
+    // AWS contains AWS specific settings for RDS/Aurora databases.
+    AWS AWS = 6 [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "aws" ];
+    // Version is the Teleport version that the server is running.
+    string Version = 7 [ (gogoproto.jsontag) = "version" ];
+    // Hostname is the database server hostname.
+    string Hostname = 8 [ (gogoproto.jsontag) = "hostname" ];
+    // HostID is the ID of the host the database server is running on.
+    string HostID = 9 [ (gogoproto.jsontag) = "host_id" ];
+    // DynamicLabels is the database server dynamic labels.
+    map<string, CommandLabelV2> DynamicLabels = 10
+        [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "dynamic_labels,omitempty" ];
+    // Rotation contains the server CA rotation information.
+    Rotation Rotation = 11
+        [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "rotation,omitempty" ];
+}
+
+// AWS contains AWS specific settings such as region.
+message AWS {
+    // Region is a AWS cloud region.
+    string Region = 1 [ (gogoproto.jsontag) = "region,omitempty" ];
+}
+
 // ServerV2 represents a Node, App, Database, Proxy or Auth server in a Teleport cluster.
 message ServerV2 {
     option (gogoproto.goproto_stringer) = false;
@@ -177,8 +228,6 @@ message ServerSpecV2 {
     // https://github.com/gravitational/teleport/issues/4862
     repeated KubernetesCluster KubernetesClusters = 10
         [ (gogoproto.jsontag) = "kube_clusters,omitempty" ];
-    // Databases is a list of databases this server is proxying.
-    repeated Database Databases = 11 [ (gogoproto.jsontag) = "databases,omitempty" ];
 }
 
 // App is a specific application that a server proxies.
@@ -206,34 +255,6 @@ message Rewrite {
     // Redirect defines a list of hosts which will be rewritten to the public
     // address of the application if they occur in the "Location" header.
     repeated string Redirect = 1 [ (gogoproto.jsontag) = "redirect" ];
-}
-
-// Database contains information about a single database server.
-message Database {
-    // Name is the database identifier.
-    string Name = 1 [ (gogoproto.jsontag) = "name" ];
-    // Description is a free-form text describing this database instance.
-    string Description = 2 [ (gogoproto.jsontag) = "description,omitempty" ];
-    // Protocol is the database type e.g. postgres, mysql, etc.
-    string Protocol = 3 [ (gogoproto.jsontag) = "protocol" ];
-    // URI is the database connection endpoint.
-    string URI = 4 [ (gogoproto.jsontag) = "uri" ];
-    // CACert is an optional base64-encoded database CA certificate.
-    bytes CACert = 5 [ (gogoproto.jsontag) = "ca_cert,omitempty" ];
-    // AWS contains AWS specific settings for RDS/Aurora databases.
-    DatabaseAWS AWS = 6 [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "aws" ];
-    // StaticLabels is map of static labels associated with a database.
-    map<string, string> StaticLabels = 7 [ (gogoproto.jsontag) = "static_labels,omitempty" ];
-    // DynamicLabels is map of dynamic labels associated with a database.
-    map<string, CommandLabelV2> DynamicLabels = 8
-        [ (gogoproto.nullable) = false, (gogoproto.jsontag) = "dynamic_labels,omitempty" ];
-}
-
-// DatabaseAWS contains AWS specific settings for a database service proxying
-// an RDS/Aurora instance.
-message DatabaseAWS {
-    // Region is a cloud region where RDS/Aurora database is deployed.
-    string Region = 1 [ (gogoproto.jsontag) = "region,omitempty" ];
 }
 
 // CommandLabelV2 is a label that has a value as a result of the

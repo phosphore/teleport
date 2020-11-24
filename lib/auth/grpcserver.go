@@ -663,9 +663,9 @@ func (g *GRPCServer) GetDatabaseServers(ctx context.Context, req *proto.GetDatab
 	if err != nil {
 		return nil, trail.ToGRPC(err)
 	}
-	var servers []*services.ServerV2
+	var servers []*services.DatabaseServerV2
 	for _, s := range databaseServers {
-		server, ok := s.(*services.ServerV2)
+		server, ok := s.(*services.DatabaseServerV2)
 		if !ok {
 			return nil, trail.ToGRPC(trace.BadParameter("unexpected type %T", s))
 		}

@@ -36,7 +36,7 @@ func onListDatabases(cf *CLIConf) {
 	if err != nil {
 		utils.FatalError(err)
 	}
-	var servers []services.Server
+	var servers []services.DatabaseServer
 	err = client.RetryWithRelogin(cf.Context, tc, func() error {
 		servers, err = tc.ListDatabaseServers(cf.Context)
 		return trace.Wrap(err)
@@ -61,10 +61,9 @@ func onDatabaseLogin(cf *CLIConf) {
 	if err != nil {
 		utils.FatalError(err)
 	}
-	var servers []services.Server
-	var db *services.Database
+	var servers []services.DatabaseServer
 	err = client.RetryWithRelogin(cf.Context, tc, func() error {
-		servers, db, err = tc.ListDatabaseServersFor(cf.Context, tc.DatabaseService)
+		servers, err = tc.ListDatabaseServersFor(cf.Context, tc.DatabaseService)
 		return trace.Wrap(err)
 	})
 	if err != nil {
@@ -87,7 +86,7 @@ func onDatabaseLogin(cf *CLIConf) {
 			RouteToCluster: tc.SiteName,
 			RouteToDatabase: proto.RouteToDatabase{
 				ServiceName: tc.DatabaseService,
-				Protocol:    db.Protocol,
+				Protocol:    servers[0].GetProtocol(),
 				Username:    cf.DatabaseUser,
 				Database:    cf.DatabaseName,
 			},

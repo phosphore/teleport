@@ -725,24 +725,32 @@ func (p *kubeServiceParser) parse(event backend.Event) (services.Resource, error
 
 func newDatabaseServerParser() *databaseServerParser {
 	return &databaseServerParser{
-		matchPrefix: backend.Key(databasesPrefix, serversPrefix, defaults.Namespace),
+		baseParser: baseParser{matchPrefix: backend.Key(databaseServersPrefix, defaults.Namespace)},
 	}
 }
 
 type databaseServerParser struct {
-	matchPrefix []byte
-}
-
-func (p *databaseServerParser) prefix() []byte {
-	return p.matchPrefix
-}
-
-func (p *databaseServerParser) match(key []byte) bool {
-	return bytes.HasPrefix(key, p.matchPrefix)
+	baseParser
 }
 
 func (p *databaseServerParser) parse(event backend.Event) (services.Resource, error) {
-	return parseServer(event, services.KindDatabaseServer)
+	switch event.Type {
+	case backend.OpDelete:
+		return resourceHeader(event, services.KindDatabaseServer, services.V2, 0)
+	case backend.OpPut:
+		resource, err := services.GetDatabaseServerMarshaler().UnmarshalDatabaseServer(
+			event.Item.Value,
+			services.KindDatabaseServer,
+			services.WithResourceID(event.Item.ID),
+			services.WithExpires(event.Item.Expires),
+			services.SkipValidation())
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		return resource, nil
+	default:
+		return nil, trace.BadParameter("event %v is not supported", event.Type)
+	}
 }
 
 func parseServer(event backend.Event, kind string) (services.Resource, error) {

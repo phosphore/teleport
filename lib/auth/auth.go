@@ -1886,7 +1886,7 @@ func (a *Server) GetAppSession(ctx context.Context, req services.GetAppSessionRe
 }
 
 // GetDatabaseServers returns all registers database proxy servers.
-func (a *Server) GetDatabaseServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.Server, error) {
+func (a *Server) GetDatabaseServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.DatabaseServer, error) {
 	return a.GetCache().GetDatabaseServers(ctx, namespace, opts...)
 }
 

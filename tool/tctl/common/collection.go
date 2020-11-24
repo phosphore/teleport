@@ -479,7 +479,7 @@ func (a *appCollection) writeYAML(w io.Writer) error {
 }
 
 type dbCollection struct {
-	servers []services.Server
+	servers []services.DatabaseServer
 }
 
 func (c *dbCollection) resources() (r []services.Resource) {
@@ -493,11 +493,9 @@ func (c *dbCollection) writeText(w io.Writer) error {
 	// TODO(r0mant): Add Labels field here as Apps do.
 	t := asciitable.MakeTable([]string{"Name", "Protocol", "Address"})
 	for _, server := range c.servers {
-		for _, db := range server.GetDatabases() {
-			t.AddRow([]string{
-				db.Name, db.Protocol, db.URI,
-			})
-		}
+		t.AddRow([]string{
+			server.GetDatabaseName(), server.GetProtocol(), server.GetURI(),
+		})
 	}
 	_, err := t.AsBuffer().WriteTo(w)
 	return trace.Wrap(err)

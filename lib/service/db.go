@@ -17,6 +17,8 @@ limitations under the License.
 package service
 
 import (
+	"fmt"
+
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/lib/auth"
 	"github.com/gravitational/teleport/lib/cache"
@@ -84,35 +86,32 @@ func (process *TeleportProcess) initDatabaseService() error {
 		return trace.Wrap(err)
 	}
 
-	// Loop over each database and create a server.
-	var databases []*services.Database
+	// Create database server for each of the proxied databases.
+	var databaseServers []services.DatabaseServer
 	for _, db := range process.Config.Databases.Databases {
-		databases = append(databases, &services.Database{
-			Name:          db.Name,
-			Description:   db.Description,
-			Protocol:      db.Protocol,
-			URI:           db.URI,
-			StaticLabels:  db.StaticLabels,
-			DynamicLabels: services.LabelsToV2(db.DynamicLabels),
-			CACert:        db.CACert,
-			AWS: services.DatabaseAWS{
-				Region: db.AWS.Region,
+		databaseServers = append(databaseServers, &services.DatabaseServerV2{
+			Kind:    services.KindDatabaseServer,
+			Version: services.V2,
+			Metadata: services.Metadata{
+				Name:      fmt.Sprintf("%v-%v", process.Config.HostUUID, db.Name),
+				Namespace: defaults.Namespace,
+				Labels:    db.StaticLabels,
+			},
+			Spec: services.DatabaseServerSpecV2{
+				Name:        db.Name,
+				Description: db.Description,
+				Protocol:    db.Protocol,
+				URI:         db.URI,
+				CACert:      db.CACert,
+				AWS: services.AWS{
+					Region: db.AWS.Region,
+				},
+				Version:       teleport.Version,
+				Hostname:      process.Config.Hostname,
+				HostID:        process.Config.HostUUID,
+				DynamicLabels: services.LabelsToV2(db.DynamicLabels),
 			},
 		})
-	}
-
-	server := &services.ServerV2{
-		Kind:    services.KindDatabaseServer,
-		Version: services.V2,
-		Metadata: services.Metadata{
-			Namespace: defaults.Namespace,
-			Name:      process.Config.HostUUID,
-		},
-		Spec: services.ServerSpecV2{
-			Hostname:  process.Config.Hostname,
-			Version:   teleport.Version,
-			Databases: databases,
-		},
 	}
 
 	authorizer, err := auth.NewAuthorizer(conn.Client, conn.Client, conn.Client)
@@ -136,8 +135,8 @@ func (process *TeleportProcess) initDatabaseService() error {
 		return trace.Wrap(err)
 	}
 
-	// Create and start the database server which will also start dynamic labels.
-	dbServer, err := db.New(process.ExitContext(), db.Config{
+	// Create and start the database service.
+	dbService, err := db.New(process.ExitContext(), db.Config{
 		DataDir:     process.Config.DataDir,
 		AuthClient:  conn.Client,
 		AccessPoint: accessPoint,
@@ -149,7 +148,7 @@ func (process *TeleportProcess) initDatabaseService() error {
 		TLSConfig:    tlsConfig,
 		CipherSuites: process.Config.CipherSuites,
 		GetRotation:  process.getRotation,
-		Server:       server,
+		Servers:      databaseServers,
 		OnHeartbeat: func(err error) {
 			if err != nil {
 				process.BroadcastEvent(Event{Name: TeleportDegradedEvent, Payload: teleport.ComponentDB})
@@ -161,7 +160,9 @@ func (process *TeleportProcess) initDatabaseService() error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	process.RegisterCriticalFunc("db.heartbeat", dbServer.Start)
+	if err := dbService.Start(); err != nil {
+		return trace.Wrap(err)
+	}
 
 	// Create and start the agent pool.
 	agentPool, err := reversetunnel.NewAgentPool(process.ExitContext(),
@@ -170,7 +171,7 @@ func (process *TeleportProcess) initDatabaseService() error {
 			HostUUID:    conn.ServerIdentity.ID.HostUUID,
 			ProxyAddr:   tunnelAddr,
 			Client:      conn.Client,
-			Server:      dbServer,
+			Server:      dbService,
 			AccessPoint: conn.Client,
 			HostSigner:  conn.ServerIdentity.KeySigner,
 			Cluster:     conn.ServerIdentity.Cert.Extensions[utils.CertExtensionAuthority],
@@ -186,7 +187,7 @@ func (process *TeleportProcess) initDatabaseService() error {
 	log.Info("Database service has successfully started.")
 
 	// Block and wait while the server and agent pool are running.
-	if err := dbServer.Wait(); err != nil {
+	if err := dbService.Wait(); err != nil {
 		return trace.Wrap(err)
 	}
 	agentPool.Wait()
@@ -194,8 +195,8 @@ func (process *TeleportProcess) initDatabaseService() error {
 	// Execute this when the process running database proxy service exits.
 	process.onExit("db.stop", func(payload interface{}) {
 		log.Info("Shutting down.")
-		if dbServer != nil {
-			warnOnErr(dbServer.Close())
+		if dbService != nil {
+			warnOnErr(dbService.Close())
 		}
 		if agentPool != nil {
 			agentPool.Stop()

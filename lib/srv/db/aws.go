@@ -29,24 +29,24 @@ import (
 	"github.com/gravitational/trace"
 )
 
-func (s *Server) initRDSRootCert(ctx context.Context, db *services.Database) error {
+func (s *Server) initRDSRootCert(ctx context.Context, server services.DatabaseServer) error {
 	// If this is not an AWS database, or CA was set explicitly, or it was
 	// already loaded, then nothing to do.
-	if !db.IsAWS() || len(db.CACert) != 0 || len(s.rdsCACerts[db.AWS.Region]) != 0 {
+	if !server.IsAWS() || len(server.GetCA()) != 0 || len(s.rdsCACerts[server.GetRegion()]) != 0 {
 		return nil
 	}
 	// This is a RDS/Aurora instance and CA certificate wasn't explicitly
 	// provided, so try to download it from AWS (or see if it's already
 	// been downloaded).
 	downloadURL := rdsDefaultCAURL
-	if u, ok := rdsCAURLs[db.AWS.Region]; ok {
+	if u, ok := rdsCAURLs[server.GetRegion()]; ok {
 		downloadURL = u
 	}
 	bytes, err := s.ensureRDSRootCert(downloadURL)
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	s.rdsCACerts[db.AWS.Region] = bytes
+	s.rdsCACerts[server.GetRegion()] = bytes
 	return nil
 }
 

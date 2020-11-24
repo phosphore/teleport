@@ -1271,7 +1271,7 @@ func (s *databaseServer) processEvent(ctx context.Context, event services.Event)
 			}
 		}
 	case backend.OpPut:
-		resource, ok := event.Resource.(services.Server)
+		resource, ok := event.Resource.(services.DatabaseServer)
 		if !ok {
 			return trace.BadParameter("unexpected type %T", event.Resource)
 		}

@@ -1308,7 +1308,7 @@ func (process *TeleportProcess) initAuthService() error {
 		Context:   process.ExitContext(),
 		Component: teleport.ComponentAuth,
 		Announcer: authServer,
-		GetServerInfo: func() (services.Server, error) {
+		GetServerInfo: func() (services.Resource, error) {
 			srv := services.ServerV2{
 				Kind:    services.KindAuthServer,
 				Version: services.V2,

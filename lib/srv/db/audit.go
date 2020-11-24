@@ -34,14 +34,14 @@ import (
 
 // newStreamWriter creates a streamer that will be used to stream the
 // requests that occur within this session to the audit log.
-func (s *Server) newStreamWriter(sessionID string) (events.StreamWriter, error) {
+func (s *Server) newStreamWriter(sessionCtx *sessionContext) (events.StreamWriter, error) {
 	clusterConfig, err := s.AccessPoint.GetClusterConfig()
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 	// TODO(r0mant): Add support for record-at-proxy.
 	// Create a sync or async streamer depending on configuration of cluster.
-	streamer, err := s.newStreamer(s.closeContext, sessionID, clusterConfig)
+	streamer, err := s.newStreamer(s.closeContext, sessionCtx.id, clusterConfig)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -51,9 +51,9 @@ func (s *Server) newStreamWriter(sessionID string) (events.StreamWriter, error) 
 		Context:      s.closeContext,
 		Streamer:     streamer,
 		Clock:        s.Clock,
-		SessionID:    session.ID(sessionID),
+		SessionID:    session.ID(sessionCtx.id),
 		Namespace:    defaults.Namespace,
-		ServerID:     s.Server.GetName(),
+		ServerID:     sessionCtx.db.GetHostID(),
 		RecordOutput: clusterConfig.GetSessionRecording() != services.RecordOff,
 		Component:    teleport.ComponentDB,
 	})
@@ -101,7 +101,7 @@ func (s *Server) emitSessionStartEventFn(streamWriter events.StreamWriter) func(
 				Code: events.DatabaseSessionStartCode,
 			},
 			ServerMetadata: events.ServerMetadata{
-				ServerID:        s.Server.GetName(),
+				ServerID:        session.db.GetHostID(),
 				ServerNamespace: defaults.Namespace,
 			},
 			UserMetadata: events.UserMetadata{
@@ -111,9 +111,9 @@ func (s *Server) emitSessionStartEventFn(streamWriter events.StreamWriter) func(
 				SessionID: session.id,
 			},
 			DatabaseMetadata: &events.DatabaseMetadata{
-				DatabaseService:  session.db.Name,
-				DatabaseProtocol: session.db.Protocol,
-				DatabaseURI:      session.db.URI,
+				DatabaseService:  session.db.GetDatabaseName(),
+				DatabaseProtocol: session.db.GetProtocol(),
+				DatabaseURI:      session.db.GetURI(),
 				DatabaseName:     session.dbName,
 				DatabaseUser:     session.dbUser,
 			},
@@ -137,9 +137,9 @@ func (s *Server) emitSessionEndEventFn(streamWriter events.StreamWriter) func(se
 				SessionID: session.id,
 			},
 			DatabaseMetadata: &events.DatabaseMetadata{
-				DatabaseService:  session.db.Name,
-				DatabaseProtocol: session.db.Protocol,
-				DatabaseURI:      session.db.URI,
+				DatabaseService:  session.db.GetDatabaseName(),
+				DatabaseProtocol: session.db.GetProtocol(),
+				DatabaseURI:      session.db.GetURI(),
 				DatabaseName:     session.dbName,
 				DatabaseUser:     session.dbUser,
 			},
@@ -163,9 +163,9 @@ func (s *Server) emitQueryEventFn(streamWriter events.StreamWriter) func(session
 				SessionID: session.id,
 			},
 			DatabaseMetadata: &events.DatabaseMetadata{
-				DatabaseService:  session.db.Name,
-				DatabaseProtocol: session.db.Protocol,
-				DatabaseURI:      session.db.URI,
+				DatabaseService:  session.db.GetDatabaseName(),
+				DatabaseProtocol: session.db.GetProtocol(),
+				DatabaseURI:      session.db.GetURI(),
 				DatabaseName:     session.dbName,
 				DatabaseUser:     session.dbUser,
 			},

@@ -21,7 +21,6 @@ import (
 	"crypto/tls"
 	"net"
 	"sync"
-	"time"
 
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/lib/auth"
@@ -64,8 +63,8 @@ type Config struct {
 	Authorizer auth.Authorizer
 	// GetRotation returns the certificate rotation state.
 	GetRotation RotationGetter
-	// Server contains the list of databaes that will be proxied.
-	Server services.Server
+	// Servers contains a list of database servers this service proxies.
+	Servers []services.DatabaseServer
 	// Credentials are credentials to AWS API.
 	Credentials *credentials.Credentials
 	// OnHeartbeat is called after every heartbeat. Used to update process state.
@@ -102,8 +101,8 @@ func (c *Config) CheckAndSetDefaults() error {
 	if c.GetRotation == nil {
 		return trace.BadParameter("rotation getter missing")
 	}
-	if c.Server == nil {
-		return trace.BadParameter("server missing")
+	if len(c.Servers) == 0 {
+		return trace.BadParameter("database servers missing")
 	}
 	if c.OnHeartbeat == nil {
 		return trace.BadParameter("heartbeat missing")
@@ -133,10 +132,10 @@ type Server struct {
 	mu sync.RWMutex
 	// middleware extracts identity from client certificates.
 	middleware *auth.Middleware
-	// heartbeat holds the server heartbeat.
-	heartbeat *srv.Heartbeat
-	// dynamicLabels are command labels updated by the server.
+	// dynamicLabels contains dynamic labels for database servers.
 	dynamicLabels map[string]*labels.Dynamic
+	// heartbeats holds hearbeats for database servers.
+	heartbeats map[string]*srv.Heartbeat
 	// rdsCACerts contains loaded RDS root certificates for required regions.
 	rdsCACerts map[string][]byte
 	// Entry is used for logging.
@@ -157,6 +156,7 @@ func New(ctx context.Context, config Config) (*Server, error) {
 		closeContext:  localCtx,
 		closeFunc:     cancel,
 		dynamicLabels: make(map[string]*labels.Dynamic),
+		heartbeats:    make(map[string]*srv.Heartbeat),
 		rdsCACerts:    make(map[string][]byte),
 		middleware: &auth.Middleware{
 			AccessPoint:   config.AccessPoint,
@@ -171,88 +171,77 @@ func New(ctx context.Context, config Config) (*Server, error) {
 
 	// Perform various initialization actions on each proxied database, like
 	// starting up dynamic labels and loading root certs for RDS dbs.
-	for _, db := range server.Server.GetDatabases() {
-		if err := server.initDatabase(localCtx, db); err != nil {
+	for _, db := range server.Servers {
+		if err := server.initDatabaseServer(localCtx, db); err != nil {
 			return nil, trace.Wrap(err)
 		}
-	}
-
-	// Create heartbeat loop so databases keep sending presence to auth server.
-	server.heartbeat, err = srv.NewHeartbeat(srv.HeartbeatConfig{
-		Mode:            srv.HeartbeatModeDB,
-		Context:         server.closeContext,
-		Component:       teleport.ComponentDB,
-		Announcer:       config.AccessPoint,
-		GetServerInfo:   server.GetServerInfo,
-		KeepAlivePeriod: defaults.ServerKeepAliveTTL,
-		AnnouncePeriod:  defaults.ServerAnnounceTTL/2 + utils.RandomDuration(defaults.ServerAnnounceTTL/10),
-		CheckPeriod:     defaults.HeartbeatCheckPeriod,
-		ServerTTL:       defaults.ServerAnnounceTTL,
-		OnHeartbeat:     config.OnHeartbeat,
-	})
-	if err != nil {
-		return nil, trace.Wrap(err)
 	}
 
 	return server, nil
 }
 
-func (s *Server) initDatabase(ctx context.Context, db *services.Database) error {
-	if err := s.initDatabaseDynamicLabels(ctx, db); err != nil {
+func (s *Server) initDatabaseServer(ctx context.Context, server services.DatabaseServer) error {
+	if err := s.initDynamicLabels(ctx, server); err != nil {
 		return trace.Wrap(err)
 	}
-	if err := s.initRDSRootCert(ctx, db); err != nil {
+	if err := s.initHeartbeat(ctx, server); err != nil {
+		return trace.Wrap(err)
+	}
+	if err := s.initRDSRootCert(ctx, server); err != nil {
 		return trace.Wrap(err)
 	}
 	return nil
 }
 
-func (s *Server) initDatabaseDynamicLabels(ctx context.Context, db *services.Database) error {
-	if len(db.DynamicLabels) == 0 {
+func (s *Server) initDynamicLabels(ctx context.Context, server services.DatabaseServer) error {
+	if len(server.GetDynamicLabels()) == 0 {
 		return nil // Nothing to do.
 	}
 	dynamic, err := labels.NewDynamic(ctx, &labels.DynamicConfig{
-		Labels: services.V2ToLabels(db.DynamicLabels),
+		Labels: server.GetDynamicLabels(),
 		Log:    s.Entry,
 	})
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	dynamic.Sync()
-	s.dynamicLabels[db.Name] = dynamic
+	s.dynamicLabels[server.GetName()] = dynamic
 	return nil
 }
 
-// GetServerInfo returns a services.Server representing the database proxy.
-func (s *Server) GetServerInfo() (services.Server, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.updateDynamicLabels()
-	s.Server.SetTTL(s.Clock, defaults.ServerAnnounceTTL)
-	s.updateRotationState()
-	return s.Server, nil
-}
-
-// updateDynamicLabels updates dynamic labels on the database services proxied
-// by this server to their most recent values.
-func (s *Server) updateDynamicLabels() {
-	databases := s.Server.GetDatabases()
-	for i, db := range databases {
-		if labels, ok := s.dynamicLabels[db.Name]; ok {
-			databases[i].DynamicLabels = services.LabelsToV2(labels.Get())
-		}
+func (s *Server) initHeartbeat(ctx context.Context, server services.DatabaseServer) error {
+	heartbeat, err := srv.NewHeartbeat(srv.HeartbeatConfig{
+		Context:   s.closeContext,
+		Component: teleport.ComponentDB,
+		Mode:      srv.HeartbeatModeDB,
+		Announcer: s.AccessPoint,
+		GetServerInfo: func() (services.Resource, error) {
+			// Update dynamic labels.
+			if labels, ok := s.dynamicLabels[server.GetName()]; ok {
+				server.SetDynamicLabels(labels.Get())
+			}
+			// Update CA rotation state.
+			rotation, err := s.GetRotation(teleport.RoleDatabase)
+			if err != nil && !trace.IsNotFound(err) {
+				s.WithError(err).Warn("Failed to get rotation state.")
+			} else {
+				server.SetRotation(*rotation)
+			}
+			// Update TTL.
+			server.SetTTL(s.Clock, defaults.ServerAnnounceTTL)
+			return server, nil
+		},
+		KeepAlivePeriod: defaults.ServerKeepAliveTTL,
+		AnnouncePeriod:  defaults.ServerAnnounceTTL/2 + utils.RandomDuration(defaults.ServerAnnounceTTL/10),
+		CheckPeriod:     defaults.HeartbeatCheckPeriod,
+		ServerTTL:       defaults.ServerAnnounceTTL,
+		OnHeartbeat:     s.OnHeartbeat,
+	})
+	if err != nil {
+		return trace.Wrap(err)
 	}
-	s.Server.SetDatabases(databases)
-}
-
-// updateRotationState updates the server's CA rotation state.
-func (s *Server) updateRotationState() {
-	rotation, err := s.GetRotation(teleport.RoleDatabase)
-	if err != nil && !trace.IsNotFound(err) {
-		s.WithError(err).Warn("Failed to get rotation state.")
-	} else {
-		s.Server.SetRotation(*rotation)
-	}
+	s.heartbeats[server.GetName()] = heartbeat
+	return nil
 }
 
 // Start starts heartbeating the presence of service.Databases that this
@@ -261,7 +250,10 @@ func (s *Server) Start() error {
 	for _, dynamicLabel := range s.dynamicLabels {
 		go dynamicLabel.Start()
 	}
-	return s.heartbeat.Run()
+	for _, heartbeat := range s.heartbeats {
+		go heartbeat.Run()
+	}
+	return nil
 }
 
 // Close will shut the server down and unblock any resources.
@@ -272,23 +264,18 @@ func (s *Server) Close() error {
 	}
 	// Signal to all goroutines to stop.
 	s.closeFunc()
-	// Stop the heartbeat
-	return s.heartbeat.Close()
+	// Stop the heartbeats.
+	var errors []error
+	for _, heartbeat := range s.heartbeats {
+		errors = append(errors, heartbeat.Close())
+	}
+	return trace.NewAggregate(errors...)
 }
 
 // Wait will block while the server is running.
 func (s *Server) Wait() error {
 	<-s.closeContext.Done()
 	return s.closeContext.Err()
-}
-
-// ForceHeartbeat is used in tests to force updating of services.Server.
-func (s *Server) ForceHeartbeat() error {
-	err := s.heartbeat.ForceSend(time.Second)
-	if err != nil {
-		return trace.Wrap(err)
-	}
-	return nil
 }
 
 // HandleConnection accepts the connection coming over reverse tunnel,
@@ -330,7 +317,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	streamWriter, err := s.newStreamWriter(sessionCtx.id)
+	streamWriter, err := s.newStreamWriter(sessionCtx)
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -361,7 +348,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) error {
 
 // dispatch returns an appropriate database engine for the session.
 func (s *Server) dispatch(sessionCtx *sessionContext, streamWriter events.StreamWriter) (databaseEngine, error) {
-	switch sessionCtx.db.Protocol {
+	switch sessionCtx.db.GetProtocol() {
 	case defaults.ProtocolPostgres:
 		return &postgresEngine{
 			authClient:     s.AuthClient,
@@ -375,7 +362,7 @@ func (s *Server) dispatch(sessionCtx *sessionContext, streamWriter events.Stream
 		}, nil
 	}
 	return nil, trace.BadParameter("unsupported database procotol %q",
-		sessionCtx.db.Protocol)
+		sessionCtx.db.GetProtocol())
 }
 
 func (s *Server) authorize(ctx context.Context) (*sessionContext, error) {
@@ -393,14 +380,14 @@ func (s *Server) authorize(ctx context.Context) (*sessionContext, error) {
 	}
 	identity := authContext.Identity.GetIdentity()
 	s.Debugf("Client identity: %#v.", identity)
-	// Fetch the requested database.
-	var db *services.Database
-	for _, d := range s.Server.GetDatabases() {
-		if d.Name == identity.RouteToDatabase.ServiceName {
-			db = d
+	// Fetch the requested database server.
+	var db services.DatabaseServer
+	for _, server := range s.Servers {
+		if server.GetDatabaseName() == identity.RouteToDatabase.ServiceName {
+			db = server
 		}
 	}
-	s.Debugf("Will connect to database %q at %v.", db.Name, db.URI)
+	s.Debugf("Will connect to database %q at %v.", db.GetDatabaseName(), db.GetURI())
 	id := uuid.New()
 	return &sessionContext{
 		id:       id,
@@ -409,7 +396,7 @@ func (s *Server) authorize(ctx context.Context) (*sessionContext, error) {
 		checker:  authContext.Checker,
 		log: s.WithFields(logrus.Fields{
 			"id": id,
-			"db": db.Name,
+			"db": db.GetDatabaseName(),
 		}),
 	}, nil
 }

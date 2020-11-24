@@ -1072,38 +1072,34 @@ func showApps(servers []services.Server, verbose bool) {
 	}
 }
 
-func showDatabases(servers []services.Server, active []string, verbose bool) {
+func showDatabases(servers []services.DatabaseServer, active []string, verbose bool) {
 	if verbose {
 		t := asciitable.MakeTable([]string{"Name", "Description", "URI", "Labels"})
 		for _, server := range servers {
-			for _, db := range server.GetDatabases() {
-				name := db.Name
-				if utils.SliceContainsStr(active, db.Name) {
-					name = fmt.Sprintf("> %v", name)
-				}
-				t.AddRow([]string{
-					name,
-					db.Description,
-					db.URI,
-					services.LabelsAsString(db.StaticLabels, db.DynamicLabels),
-				})
+			name := server.GetDatabaseName()
+			if utils.SliceContainsStr(active, name) {
+				name = fmt.Sprintf("> %v", name)
 			}
+			t.AddRow([]string{
+				name,
+				server.GetDescription(),
+				server.GetURI(),
+				server.LabelsString(),
+			})
 		}
 		fmt.Println(t.AsBuffer().String())
 	} else {
 		t := asciitable.MakeTable([]string{"Name", "Description", "Labels"})
 		for _, server := range servers {
-			for _, db := range server.GetDatabases() {
-				name := db.Name
-				if utils.SliceContainsStr(active, db.Name) {
-					name = fmt.Sprintf("> %v", name)
-				}
-				t.AddRow([]string{
-					name,
-					db.Description,
-					services.LabelsAsString(db.StaticLabels, db.DynamicLabels),
-				})
+			name := server.GetDatabaseName()
+			if utils.SliceContainsStr(active, name) {
+				name = fmt.Sprintf("> %v", name)
 			}
+			t.AddRow([]string{
+				name,
+				server.GetDescription(),
+				server.LabelsString(),
+			})
 		}
 		fmt.Println(t.AsBuffer().String())
 	}

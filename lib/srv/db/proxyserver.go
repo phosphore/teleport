@@ -118,7 +118,7 @@ func (s *ProxyServer) Serve(listener net.Listener) error {
 			if trace.IsConnectionProblem(err) {
 				return trace.Wrap(err)
 			}
-			s.WithError(err).Error("Failed to accept client connection.")
+			s.WithError(err).Errorf("Failed to accept client connection.")
 			continue
 		}
 		// The multiplexed connection contains information about detected
@@ -179,7 +179,7 @@ func (s *ProxyServer) connectToSite(ctx context.Context) (net.Conn, error) {
 	siteConn, err := authContext.site.Dial(reversetunnel.DialParams{
 		From:     &utils.NetAddr{AddrNetwork: "tcp", Addr: "@db-proxy"},
 		To:       &utils.NetAddr{AddrNetwork: "tcp", Addr: reversetunnel.LocalNode},
-		ServerID: fmt.Sprintf("%v.%v", authContext.server.GetName(), authContext.site.GetName()),
+		ServerID: fmt.Sprintf("%v.%v", authContext.server.GetHostID(), authContext.site.GetName()),
 		ConnType: services.DatabaseTunnel,
 	})
 	if err != nil {
@@ -198,10 +198,8 @@ type proxyContext struct {
 	identity tlsca.Identity
 	// site is the remote site running the database server.
 	site reversetunnel.RemoteSite
-	// server is a server that has the requested database.
-	server services.Server
-	// db is a database the client is connecting to.
-	db *services.Database
+	// server is a database server that has the requested database.
+	server services.DatabaseServer
 	// remote indicates if this is a request for remote cluster.
 	remote bool
 }
@@ -213,54 +211,51 @@ func (s *ProxyServer) authorize(ctx context.Context) (*proxyContext, error) {
 	}
 	identity := authContext.Identity.GetIdentity()
 	s.Debugf("Client identity: %#v.", identity)
-	site, server, db, err := s.pickDatabaseServer(ctx, identity)
+	site, server, err := s.pickDatabaseServer(ctx, identity)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	s.Debugf("Will proxy to database %q on server %s.", db.Name, server)
+	s.Debugf("Will proxy to database %q on server %s.", server.GetDatabaseName(), server)
 	return &proxyContext{
 		identity: identity,
 		site:     site,
 		server:   server,
-		db:       db,
 	}, nil
 }
 
 // pickDatabaseServer finds a database server instance to proxy requests
 // to based on the routing information from the provided identity.
-func (s *ProxyServer) pickDatabaseServer(ctx context.Context, identity tlsca.Identity) (reversetunnel.RemoteSite, services.Server, *services.Database, error) {
+func (s *ProxyServer) pickDatabaseServer(ctx context.Context, identity tlsca.Identity) (reversetunnel.RemoteSite, services.DatabaseServer, error) {
 	site, err := s.Tunnel.GetSite(identity.RouteToDatabase.ClusterName)
 	if err != nil {
-		return nil, nil, nil, trace.Wrap(err)
+		return nil, nil, trace.Wrap(err)
 	}
 	accessPoint, err := site.CachingAccessPoint()
 	if err != nil {
-		return nil, nil, nil, trace.Wrap(err)
+		return nil, nil, trace.Wrap(err)
 	}
-	dbServers, err := accessPoint.GetDatabaseServers(ctx, defaults.Namespace)
+	servers, err := accessPoint.GetDatabaseServers(ctx, defaults.Namespace)
 	if err != nil {
-		return nil, nil, nil, trace.Wrap(err)
+		return nil, nil, trace.Wrap(err)
 	}
-	s.Debugf("Available database servers on %v: %s.", site.GetName(), dbServers)
+	s.Debugf("Available database servers on %v: %s.", site.GetName(), servers)
 	// Find out which database servers proxy the database a user is
 	// connecting to using routing information from identity.
-	for _, server := range dbServers {
-		for _, db := range server.GetDatabases() {
-			if db.Name == identity.RouteToDatabase.ServiceName {
-				// TODO(r0mant): Return all matching servers and round-robin
-				// between them.
-				return site, server, db, nil
-			}
+	for _, server := range servers {
+		if server.GetDatabaseName() == identity.RouteToDatabase.ServiceName {
+			// TODO(r0mant): Return all matching servers and round-robin
+			// between them.
+			return site, server, nil
 		}
 	}
-	return nil, nil, nil, trace.NotFound("database %q not found among registered database servers on cluster %q",
+	return nil, nil, trace.NotFound("database %q not found among registered database servers on cluster %q",
 		identity.RouteToDatabase.ServiceName,
 		identity.RouteToDatabase.ClusterName)
 }
 
 // getConfigForServer returns TLS config used for establishing connection
 // to a remote database server over reverse tunnel.
-func (s *ProxyServer) getConfigForServer(ctx context.Context, identity tlsca.Identity, server services.Server) (*tls.Config, error) {
+func (s *ProxyServer) getConfigForServer(ctx context.Context, identity tlsca.Identity, server services.DatabaseServer) (*tls.Config, error) {
 	privateKeyBytes, _, err := native.GenerateKeyPair("")
 	if err != nil {
 		return nil, trace.Wrap(err)

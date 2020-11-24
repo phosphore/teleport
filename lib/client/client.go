@@ -327,7 +327,7 @@ func (proxy *ProxyClient) GetAppServers(ctx context.Context, namespace string) (
 }
 
 // GetDatabaseServers returns all registered database proxy servers.
-func (proxy *ProxyClient) GetDatabaseServers(ctx context.Context, namespace string) ([]services.Server, error) {
+func (proxy *ProxyClient) GetDatabaseServers(ctx context.Context, namespace string) ([]services.DatabaseServer, error) {
 	authClient, err := proxy.CurrentClusterAccessPoint(ctx, false)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -340,24 +340,21 @@ func (proxy *ProxyClient) GetDatabaseServers(ctx context.Context, namespace stri
 }
 
 // GetDatabaseServersFor returns all servers proxying the specified database.
-func (proxy *ProxyClient) GetDatabaseServersFor(ctx context.Context, namespace, dbName string) (result []services.Server, db *services.Database, err error) {
+func (proxy *ProxyClient) GetDatabaseServersFor(ctx context.Context, namespace, dbName string) (result []services.DatabaseServer, err error) {
 	authClient, err := proxy.CurrentClusterAccessPoint(ctx, false)
 	if err != nil {
-		return nil, nil, trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	servers, err := authClient.GetDatabaseServers(ctx, namespace, services.SkipValidation())
 	if err != nil {
-		return nil, nil, trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
 	for _, server := range servers {
-		for _, database := range server.GetDatabases() {
-			if database.Name == dbName {
-				result = append(result, server)
-				db = database
-			}
+		if server.GetDatabaseName() == dbName {
+			result = append(result, server)
 		}
 	}
-	return result, db, nil
+	return result, nil
 }
 
 // CurrentClusterAccessPoint returns cluster access point to the currently

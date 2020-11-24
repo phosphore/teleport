@@ -2986,7 +2986,7 @@ func (c *Client) GetKubeServices(ctx context.Context) ([]services.Server, error)
 }
 
 // GetDatabaseServers returns all registered database proxy servers.
-func (c *Client) GetDatabaseServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.Server, error) {
+func (c *Client) GetDatabaseServers(ctx context.Context, namespace string, opts ...services.MarshalOption) ([]services.DatabaseServer, error) {
 	clt, err := c.grpc()
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -3002,7 +3002,7 @@ func (c *Client) GetDatabaseServers(ctx context.Context, namespace string, opts 
 	if err != nil {
 		return nil, trail.FromGRPC(err)
 	}
-	var servers []services.Server
+	var servers []services.DatabaseServer
 	for _, server := range resp.GetServers() {
 		servers = append(servers, server)
 	}
@@ -3010,12 +3010,12 @@ func (c *Client) GetDatabaseServers(ctx context.Context, namespace string, opts 
 }
 
 // UpsertDatabaseServer registers a new database proxy server.
-func (c *Client) UpsertDatabaseServer(ctx context.Context, server services.Server) (*services.KeepAlive, error) {
+func (c *Client) UpsertDatabaseServer(ctx context.Context, server services.DatabaseServer) (*services.KeepAlive, error) {
 	clt, err := c.grpc()
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	s, ok := server.(*services.ServerV2)
+	s, ok := server.(*services.DatabaseServerV2)
 	if !ok {
 		return nil, trace.BadParameter("invalid type %T", server)
 	}

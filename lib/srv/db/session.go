@@ -30,7 +30,7 @@ type sessionContext struct {
 	// id is the unique session id.
 	id string
 	// db is the database instance information.
-	db *services.Database
+	db services.DatabaseServer
 	// identity is the identity of the connecting teleport user.
 	identity tlsca.Identity
 	// checker is the access checker for the identity
@@ -46,5 +46,5 @@ type sessionContext struct {
 // String returns string representation of the session parameters.
 func (c *sessionContext) String() string {
 	return fmt.Sprintf("db[%v] identity[%v] dbUser[%v] dbName[%v]",
-		c.db.Name, c.identity.Username, c.dbUser, c.dbName)
+		c.db.GetDatabaseName(), c.identity.Username, c.dbUser, c.dbName)
 }

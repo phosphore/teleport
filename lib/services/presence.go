@@ -188,9 +188,9 @@ type Presence interface {
 	DeleteAllAppServers(context.Context, string) error
 
 	// GetDatabaseServers returns all registered database proxy servers.
-	GetDatabaseServers(context.Context, string, ...MarshalOption) ([]Server, error)
+	GetDatabaseServers(context.Context, string, ...MarshalOption) ([]DatabaseServer, error)
 	// UpsertDatabaseServer creates or updates a new database proxy server.
-	UpsertDatabaseServer(context.Context, Server) (*KeepAlive, error)
+	UpsertDatabaseServer(context.Context, DatabaseServer) (*KeepAlive, error)
 	// DeleteDatabaseServer removes the specified database proxy server.
 	DeleteDatabaseServer(context.Context, string, string) error
 	// DeleteAllDatabaseServers removes all database proxy servers.

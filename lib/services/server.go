@@ -80,10 +80,6 @@ type Server interface {
 	GetKubernetesClusters() []*KubernetesCluster
 	// SetKubeClusters sets the kubernetes clusters handled by this server.
 	SetKubernetesClusters([]*KubernetesCluster)
-	// GetDatabases returns the list of databases this server is proxying.
-	GetDatabases() []*Database
-	// SetDatabases sets the list of databases this server is proxying.
-	SetDatabases([]*Database)
 	// V1 returns V1 version for backwards compatibility
 	V1() *ServerV1
 	// MatchAgainst takes a map of labels and returns True if this server
@@ -276,16 +272,6 @@ func (s *ServerV2) SetApps(apps []*App) {
 	s.Spec.Apps = apps
 }
 
-// GetDatabases returns the list of databases this server is proxying.
-func (s *ServerV2) GetDatabases() []*Database {
-	return s.Spec.Databases
-}
-
-// SetDatabases sets the list of databases this server is proxying.
-func (s *ServerV2) SetDatabases(dbs []*Database) {
-	s.Spec.Databases = dbs
-}
-
 func (s *ServerV2) String() string {
 	return fmt.Sprintf("Server(name=%v, namespace=%v, addr=%v, labels=%v)", s.Metadata.Name, s.Metadata.Namespace, s.Spec.Addr, s.Metadata.Labels)
 }
@@ -390,6 +376,21 @@ const (
 	Different = iota
 )
 
+// Compare compares two provided resources.
+func Compare(a, b Resource) int {
+	if serverA, ok := a.(Server); ok {
+		if serverB, ok := b.(Server); ok {
+			return CompareServers(serverA, serverB)
+		}
+	}
+	if dbA, ok := a.(DatabaseServer); ok {
+		if dbB, ok := b.(DatabaseServer); ok {
+			return CompareDatabaseServers(dbA, dbB)
+		}
+	}
+	return Different
+}
+
 // CompareServers returns difference between two server
 // objects, Equal (0) if identical, OnlyTimestampsDifferent(1) if only timestamps differ, Different(2) otherwise
 func CompareServers(a, b Server) int {
@@ -431,13 +432,9 @@ func CompareServers(a, b Server) int {
 		return Different
 	}
 
-	// If this server is proxying applications or databases, compare them to
-	// make sure they match.
+	// If this server is proxying applications, compare them to make sure they match.
 	if a.GetKind() == KindAppServer {
 		return CompareApps(a.GetApps(), b.GetApps())
-	}
-	if a.GetKind() == KindDatabaseServer {
-		return CompareDatabases(a.GetDatabases(), b.GetDatabases())
 	}
 
 	if !cmp.Equal(a.GetKubernetesClusters(), b.GetKubernetesClusters()) {
@@ -479,38 +476,6 @@ func CompareApps(a []*App, b []*App) int {
 			if !utils.StringSlicesEqual(a[i].Rewrite.Redirect, b[i].Rewrite.Redirect) {
 				return Different
 			}
-		}
-	}
-	return Equal
-}
-
-// IsAWS returns true if this database represents AWS RDS/Aurora instance.
-func (d *Database) IsAWS() bool {
-	return d.AWS.Region != ""
-}
-
-// CompareDatabases compares two slices of databases.
-func CompareDatabases(a []*Database, b []*Database) int {
-	if len(a) != len(b) {
-		return Different
-	}
-	for i := range a {
-		if a[i].Name != b[i].Name {
-			return Different
-		}
-		if a[i].Protocol != b[i].Protocol {
-			return Different
-		}
-		if a[i].URI != b[i].URI {
-			return Different
-		}
-		if !utils.StringMapsEqual(a[i].StaticLabels, b[i].StaticLabels) {
-			return Different
-		}
-		if !CmdLabelMapsEqual(
-			V2ToLabels(a[i].DynamicLabels),
-			V2ToLabels(b[i].DynamicLabels)) {
-			return Different
 		}
 	}
 	return Equal
@@ -568,50 +533,6 @@ const ServerSpecV2Schema = `{
              }
           },
           "commands": {
-            "type": "object",
-            "additionalProperties": false,
-            "patternProperties": {
-              "^.*$": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["command"],
-                "properties": {
-                  "command": {"type": "array", "items": {"type": "string"}},
-                  "period": {"type": "string"},
-                  "result": {"type": "string"}
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "databases": {
-      "type": ["array"],
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "name": {"type": "string"},
-          "description": {"type": "string"},
-          "protocol": {"type": "string"},
-          "uri": {"type": "string"},
-          "ca_cert": {"type": "string"},
-          "aws": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "region": {"type": "string"}
-            }
-          },
-          "static_labels": {
-            "type": "object",
-            "additionalProperties": false,
-            "patternProperties": {
-              "^.*$":  {"type": "string"}
-            }
-          },
-          "dynamic_labels": {
             "type": "object",
             "additionalProperties": false,
             "patternProperties": {
