@@ -2036,14 +2036,16 @@ func TestBoolOptions(t *testing.T) {
 
 func TestCheckAccessToDatabase(t *testing.T) {
 	utils.InitLoggerForTests(testing.Verbose())
-	dbStage := &Database{
-		Name:         "stage",
-		StaticLabels: map[string]string{"env": "stage"},
-	}
-	dbProd := &Database{
-		Name:         "prod",
-		StaticLabels: map[string]string{"env": "prod"},
-	}
+	dbStage := NewDatabaseServerV2("stage",
+		map[string]string{"env": "stage"},
+		DatabaseServerSpecV2{
+			Name: "stage",
+		})
+	dbProd := NewDatabaseServerV2("prod",
+		map[string]string{"env": "prod"},
+		DatabaseServerSpecV2{
+			Name: "prod",
+		})
 	roleDevStage := &RoleV3{
 		Metadata: Metadata{Name: "dev-stage", Namespace: defaults.Namespace},
 		Spec: RoleSpecV3{
@@ -2072,7 +2074,7 @@ func TestCheckAccessToDatabase(t *testing.T) {
 		},
 	}
 	type access struct {
-		db     *Database
+		server DatabaseServer
 		dbName string
 		dbUser string
 		access bool
@@ -2086,19 +2088,19 @@ func TestCheckAccessToDatabase(t *testing.T) {
 			name:  "developer allowed any username/database in stage database except one database",
 			roles: []*RoleV3{roleDevStage, roleDevProd},
 			access: []access{
-				{db: dbStage, dbName: "superdb", dbUser: "superuser", access: true},
-				{db: dbStage, dbName: "test", dbUser: "dev", access: true},
-				{db: dbStage, dbName: "supersecret", dbUser: "dev", access: false},
+				{server: dbStage, dbName: "superdb", dbUser: "superuser", access: true},
+				{server: dbStage, dbName: "test", dbUser: "dev", access: true},
+				{server: dbStage, dbName: "supersecret", dbUser: "dev", access: false},
 			},
 		},
 		{
 			name:  "developer allowed only specific username/database in prod database",
 			roles: []*RoleV3{roleDevStage, roleDevProd},
 			access: []access{
-				{db: dbProd, dbName: "superdb", dbUser: "superuser", access: false},
-				{db: dbProd, dbName: "test", dbUser: "dev", access: true},
-				{db: dbProd, dbName: "superdb", dbUser: "dev", access: false},
-				{db: dbProd, dbName: "test", dbUser: "superuser", access: false},
+				{server: dbProd, dbName: "superdb", dbUser: "superuser", access: false},
+				{server: dbProd, dbName: "test", dbUser: "dev", access: true},
+				{server: dbProd, dbName: "superdb", dbUser: "dev", access: false},
+				{server: dbProd, dbName: "test", dbUser: "superuser", access: false},
 			},
 		},
 	}
@@ -2109,7 +2111,7 @@ func TestCheckAccessToDatabase(t *testing.T) {
 				set = append(set, r)
 			}
 			for _, access := range tc.access {
-				err := set.CheckAccessToDatabase(defaults.Namespace, access.dbName, access.dbUser, access.db)
+				err := set.CheckAccessToDatabase(access.server, access.dbName, access.dbUser)
 				if access.access {
 					require.NoError(t, err)
 				} else {
@@ -2219,23 +2221,28 @@ func TestCheckDatabaseNamesAndUsers(t *testing.T) {
 
 func TestCheckAccessToDatabaseService(t *testing.T) {
 	utils.InitLoggerForTests(testing.Verbose())
-	dbNoLabels := &Database{
-		Name: "test",
-	}
-	dbStage := &Database{
-		Name:          "stage",
-		StaticLabels:  map[string]string{"env": "stage"},
-		DynamicLabels: map[string]CommandLabelV2{"arch": {Result: "x86"}},
-	}
-	dbStage2 := &Database{
-		Name:          "stage-2",
-		StaticLabels:  map[string]string{"env": "stage"},
-		DynamicLabels: map[string]CommandLabelV2{"arch": {Result: "amd64"}},
-	}
-	dbProd := &Database{
-		Name:         "prod",
-		StaticLabels: map[string]string{"env": "prod"},
-	}
+	dbNoLabels := NewDatabaseServerV2("test",
+		nil,
+		DatabaseServerSpecV2{
+			Name: "test",
+		})
+	dbStage := NewDatabaseServerV2("stage",
+		map[string]string{"env": "stage"},
+		DatabaseServerSpecV2{
+			Name:          "stage",
+			DynamicLabels: map[string]CommandLabelV2{"arch": {Result: "x86"}},
+		})
+	dbStage2 := NewDatabaseServerV2("stage2",
+		map[string]string{"env": "stage"},
+		DatabaseServerSpecV2{
+			Name:          "stage2",
+			DynamicLabels: map[string]CommandLabelV2{"arch": {Result: "amd64"}},
+		})
+	dbProd := NewDatabaseServerV2("prod",
+		map[string]string{"env": "prod"},
+		DatabaseServerSpecV2{
+			Name: "prod",
+		})
 	roleAdmin := &RoleV3{
 		Metadata: Metadata{Name: "admin", Namespace: defaults.Namespace},
 		Spec: RoleSpecV3{
@@ -2267,7 +2274,7 @@ func TestCheckAccessToDatabaseService(t *testing.T) {
 		},
 	}
 	type access struct {
-		db     *Database
+		server DatabaseServer
 		access bool
 	}
 	testCases := []struct {
@@ -2279,40 +2286,40 @@ func TestCheckAccessToDatabaseService(t *testing.T) {
 			name:  "empty role doesn't have access to any databases",
 			roles: nil,
 			access: []access{
-				{db: dbNoLabels, access: false},
-				{db: dbStage, access: false},
-				{db: dbStage2, access: false},
-				{db: dbProd, access: false},
+				{server: dbNoLabels, access: false},
+				{server: dbStage, access: false},
+				{server: dbStage2, access: false},
+				{server: dbProd, access: false},
 			},
 		},
 		{
 			name:  "intern doesn't have access to any databases",
 			roles: []*RoleV3{roleIntern},
 			access: []access{
-				{db: dbNoLabels, access: false},
-				{db: dbStage, access: false},
-				{db: dbStage2, access: false},
-				{db: dbProd, access: false},
+				{server: dbNoLabels, access: false},
+				{server: dbStage, access: false},
+				{server: dbStage2, access: false},
+				{server: dbProd, access: false},
 			},
 		},
 		{
 			name:  "developer only has access to one of stage database",
 			roles: []*RoleV3{roleDev},
 			access: []access{
-				{db: dbNoLabels, access: false},
-				{db: dbStage, access: true},
-				{db: dbStage2, access: false},
-				{db: dbProd, access: false},
+				{server: dbNoLabels, access: false},
+				{server: dbStage, access: true},
+				{server: dbStage2, access: false},
+				{server: dbProd, access: false},
 			},
 		},
 		{
 			name:  "admin has access to all databases",
 			roles: []*RoleV3{roleAdmin},
 			access: []access{
-				{db: dbNoLabels, access: true},
-				{db: dbStage, access: true},
-				{db: dbStage2, access: true},
-				{db: dbProd, access: true},
+				{server: dbNoLabels, access: true},
+				{server: dbStage, access: true},
+				{server: dbStage2, access: true},
+				{server: dbProd, access: true},
 			},
 		},
 	}
@@ -2323,7 +2330,7 @@ func TestCheckAccessToDatabaseService(t *testing.T) {
 				set = append(set, r)
 			}
 			for _, access := range tc.access {
-				err := set.CheckAccessToDatabaseService(defaults.Namespace, access.db)
+				err := set.CheckAccessToDatabaseServer(access.server)
 				if access.access {
 					require.NoError(t, err)
 				} else {

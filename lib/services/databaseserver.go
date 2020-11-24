@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/utils"
 
 	"github.com/gravitational/trace"
@@ -70,6 +71,20 @@ type DatabaseServer interface {
 	IsAWS() bool
 	// CheckAndSetDefaults checks and set default values for any missing fields.
 	CheckAndSetDefaults() error
+}
+
+// NewDatabaseServerV2 creates a new database server instance.
+func NewDatabaseServerV2(name string, labels map[string]string, spec DatabaseServerSpecV2) *DatabaseServerV2 {
+	return &DatabaseServerV2{
+		Kind:    KindDatabaseServer,
+		Version: V2,
+		Metadata: Metadata{
+			Name:      name,
+			Namespace: defaults.Namespace,
+			Labels:    labels,
+		},
+		Spec: spec,
+	}
 }
 
 // GetVersion returns the database server resource version.

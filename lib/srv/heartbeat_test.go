@@ -82,7 +82,7 @@ func (s *HeartbeatSuite) TestHeartbeatKeepAlive(c *check.C) {
 			KeepAlivePeriod: 10 * time.Second,
 			ServerTTL:       600 * time.Second,
 			Clock:           clock,
-			GetServerInfo: func() (services.Server, error) {
+			GetServerInfo: func() (services.Resource, error) {
 				srv.SetTTL(clock, defaults.ServerAnnounceTTL)
 				return srv, nil
 			},
@@ -194,7 +194,7 @@ func TestHeartbeatAnnounce(t *testing.T) {
 				KeepAlivePeriod: 10 * time.Second,
 				ServerTTL:       600 * time.Second,
 				Clock:           clock,
-				GetServerInfo: func() (services.Server, error) {
+				GetServerInfo: func() (services.Resource, error) {
 					srv := &services.ServerV2{
 						Kind:    tt.kind,
 						Version: services.V2,
@@ -286,6 +286,14 @@ type fakeAnnouncer struct {
 
 func (f *fakeAnnouncer) UpsertAppServer(ctx context.Context, s services.Server) (*services.KeepAlive, error) {
 	f.upsertCalls[HeartbeatModeApp]++
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &services.KeepAlive{}, nil
+}
+
+func (f *fakeAnnouncer) UpsertDatabaseServer(ctx context.Context, s services.DatabaseServer) (*services.KeepAlive, error) {
+	f.upsertCalls[HeartbeatModeDB]++
 	if f.err != nil {
 		return nil, f.err
 	}

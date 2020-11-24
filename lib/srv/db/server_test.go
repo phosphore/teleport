@@ -276,7 +276,7 @@ func setupTestContext(ctx context.Context, t *testing.T) *testContext {
 		AccessPoint:   dbAuthClient,
 		StreamEmitter: dbAuthClient,
 		Authorizer:    dbAuthorizer,
-		Server:        dbServer,
+		Servers:       []services.DatabaseServer{dbServer},
 		TLSConfig:     tlsConfig,
 		CipherSuites:  utils.DefaultCipherSuites(),
 		GetRotation:   func(teleport.Role) (*services.Rotation, error) { return &services.Rotation{}, nil },
@@ -372,24 +372,15 @@ func connectToPostgres(ctx context.Context, testCtx *testContext, config connect
 	return pgConn, nil
 }
 
-func makeDatabaseServer(name, uri string) *services.ServerV2 {
-	return &services.ServerV2{
-		Kind:    services.KindDatabaseServer,
-		Version: services.V2,
-		Metadata: services.Metadata{
-			Name:      name,
-			Namespace: defaults.Namespace,
-		},
-		Spec: services.ServerSpecV2{
+func makeDatabaseServer(name, uri string) services.DatabaseServer {
+	return services.NewDatabaseServerV2(
+		name,
+		nil,
+		services.DatabaseServerSpecV2{
+			Name:     "test",
+			Protocol: defaults.ProtocolPostgres,
+			URI:      uri,
 			Version:  teleport.Version,
 			Hostname: teleport.APIDomain,
-			Databases: []*services.Database{
-				{
-					Name:     "test",
-					Protocol: defaults.ProtocolPostgres,
-					URI:      uri,
-				},
-			},
-		},
-	}
+		})
 }

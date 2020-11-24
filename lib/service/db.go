@@ -22,7 +22,6 @@ import (
 	"github.com/gravitational/teleport"
 	"github.com/gravitational/teleport/lib/auth"
 	"github.com/gravitational/teleport/lib/cache"
-	"github.com/gravitational/teleport/lib/defaults"
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/reversetunnel"
 	"github.com/gravitational/teleport/lib/services"
@@ -89,29 +88,21 @@ func (process *TeleportProcess) initDatabaseService() error {
 	// Create database server for each of the proxied databases.
 	var databaseServers []services.DatabaseServer
 	for _, db := range process.Config.Databases.Databases {
-		databaseServers = append(databaseServers, &services.DatabaseServerV2{
-			Kind:    services.KindDatabaseServer,
-			Version: services.V2,
-			Metadata: services.Metadata{
-				Name:      fmt.Sprintf("%v-%v", process.Config.HostUUID, db.Name),
-				Namespace: defaults.Namespace,
-				Labels:    db.StaticLabels,
-			},
-			Spec: services.DatabaseServerSpecV2{
-				Name:        db.Name,
-				Description: db.Description,
-				Protocol:    db.Protocol,
-				URI:         db.URI,
-				CACert:      db.CACert,
-				AWS: services.AWS{
-					Region: db.AWS.Region,
-				},
+		databaseServers = append(databaseServers, services.NewDatabaseServerV2(
+			fmt.Sprintf("%v-%v", process.Config.HostUUID, db.Name),
+			db.StaticLabels,
+			services.DatabaseServerSpecV2{
+				Name:          db.Name,
+				Description:   db.Description,
+				Protocol:      db.Protocol,
+				URI:           db.URI,
+				CACert:        db.CACert,
+				AWS:           services.AWS{Region: db.AWS.Region},
+				DynamicLabels: services.LabelsToV2(db.DynamicLabels),
 				Version:       teleport.Version,
 				Hostname:      process.Config.Hostname,
 				HostID:        process.Config.HostUUID,
-				DynamicLabels: services.LabelsToV2(db.DynamicLabels),
-			},
-		})
+			}))
 	}
 
 	authorizer, err := auth.NewAuthorizer(conn.Client, conn.Client, conn.Client)
