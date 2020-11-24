@@ -320,7 +320,7 @@ clone:
 
 steps:
   - name: Check out code
-    image: golang:1.14.4
+    image: golang:1.15.5
     volumes:
       - name: tmpfs
         path: /tmpfs
@@ -351,7 +351,7 @@ steps:
         fi
 
   - name: Run docs tests (internal links only)
-    image: golang:1.14.4
+    image: golang:1.15.5
     volumes:
       - name: tmpfs
         path: /tmpfs
@@ -405,7 +405,7 @@ clone:
 
 steps:
   - name: Check out code
-    image: golang:1.14.4
+    image: golang:1.15.5
     volumes:
       - name: tmpfs
         path: /tmpfs
@@ -436,7 +436,7 @@ steps:
         fi
 
   - name: Run docs tests (external links only)
-    image: golang:1.14.4
+    image: golang:1.15.5
     failure: ignore
     volumes:
       - name: tmpfs
@@ -3158,6 +3158,6 @@ volumes:
 
 ---
 kind: signature
-hmac: 8f17b3edc11f7c493d4465bccf1e349646b3ce8234919f9af3fec974ba634800
+hmac: e6f6650cb8337dfa31705626380a1aa9d0562c8361337751c2ce93f94b09bedf
 
 ...
