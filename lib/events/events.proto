@@ -1099,16 +1099,16 @@ message AppSessionRequest {
 
 // DatabaseMetadata contains common database information.
 message DatabaseMetadata {
-    // DBName is the name of the proxied database from the configuration.
-    string DBName = 1 [ (gogoproto.jsontag) = "db_name" ];
-    // DBProtocol is the database type, e.g. postgres or mysql.
-    string DBProtocol = 2 [ (gogoproto.jsontag) = "db_protocol" ];
-    // DBEndpoint is the database endpoint to connect to.
-    string DBEndpoint = 3 [ (gogoproto.jsontag) = "db_endpoint" ];
-    // DBDatabase is the name of the database a user is connecting to.
-    string DBDatabase = 4 [ (gogoproto.jsontag) = "db_database" ];
-    // DBUser is the database username used to connect.
-    string DBUser = 5 [ (gogoproto.jsontag) = "db_user" ];
+    // DatabaseService is the name of the database service proxying the database.
+    string DatabaseService = 1 [ (gogoproto.jsontag) = "db_service" ];
+    // DatabaseProtocol is the database type, e.g. postgres or mysql.
+    string DatabaseProtocol = 2 [ (gogoproto.jsontag) = "db_protocol" ];
+    // URI is the database URI to connect to.
+    string DatabaseURI = 3 [ (gogoproto.jsontag) = "db_uri" ];
+    // DatabaseName is the name of the database a user is connecting to.
+    string DatabaseName = 4 [ (gogoproto.jsontag) = "db_name" ];
+    // DatabaseUser is the database username used to connect.
+    string DatabaseUser = 5 [ (gogoproto.jsontag) = "db_user" ];
 }
 
 // DatabaseSessionStart is emitted when a user connects to a database.
@@ -1128,7 +1128,7 @@ message DatabaseSessionStart {
     // ConnectionMetadata holds information about the connection.
     ConnectionMetadata Connection = 5
         [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
-    //
+    // Database contains database related metadata.
     DatabaseMetadata Database = 6 [ (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
 }
 
@@ -1143,10 +1143,10 @@ message DatabaseQuery {
     // SessionMetadata is a common event session metadata.
     SessionMetadata Session = 3
         [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
-    //
+    // Database contains database related metadata.
     DatabaseMetadata Database = 4 [ (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
-    //
-    string Query = 5 [ (gogoproto.jsontag) = "db_query" ];
+    // DatabaseQuery is the executed query string.
+    string DatabaseQuery = 5 [ (gogoproto.jsontag) = "db_query" ];
 }
 
 // DatabaseSessionEnd is emitted when a user ends the database session.
@@ -1160,7 +1160,7 @@ message DatabaseSessionEnd {
     // SessionMetadata is a common event session metadata.
     SessionMetadata Session = 3
         [ (gogoproto.nullable) = false, (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
-    //
+    // Database contains database related metadata.
     DatabaseMetadata Database = 4 [ (gogoproto.embed) = true, (gogoproto.jsontag) = "" ];
 }
 

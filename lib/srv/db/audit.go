@@ -111,11 +111,11 @@ func (s *Server) emitSessionStartEventFn(streamWriter events.StreamWriter) func(
 				SessionID: session.id,
 			},
 			DatabaseMetadata: &events.DatabaseMetadata{
-				DBName:     session.db.Name,
-				DBProtocol: session.db.Protocol,
-				DBEndpoint: session.db.URI,
-				DBDatabase: session.dbName,
-				DBUser:     session.dbUser,
+				DatabaseService:  session.db.Name,
+				DatabaseProtocol: session.db.Protocol,
+				DatabaseURI:      session.db.URI,
+				DatabaseName:     session.dbName,
+				DatabaseUser:     session.dbUser,
 			},
 		})
 	}
@@ -137,11 +137,11 @@ func (s *Server) emitSessionEndEventFn(streamWriter events.StreamWriter) func(se
 				SessionID: session.id,
 			},
 			DatabaseMetadata: &events.DatabaseMetadata{
-				DBName:     session.db.Name,
-				DBProtocol: session.db.Protocol,
-				DBEndpoint: session.db.URI,
-				DBDatabase: session.dbName,
-				DBUser:     session.dbUser,
+				DatabaseService:  session.db.Name,
+				DatabaseProtocol: session.db.Protocol,
+				DatabaseURI:      session.db.URI,
+				DatabaseName:     session.dbName,
+				DatabaseUser:     session.dbUser,
 			},
 		})
 	}
@@ -163,13 +163,13 @@ func (s *Server) emitQueryEventFn(streamWriter events.StreamWriter) func(session
 				SessionID: session.id,
 			},
 			DatabaseMetadata: &events.DatabaseMetadata{
-				DBName:     session.db.Name,
-				DBProtocol: session.db.Protocol,
-				DBEndpoint: session.db.URI,
-				DBDatabase: session.dbName,
-				DBUser:     session.dbUser,
+				DatabaseService:  session.db.Name,
+				DatabaseProtocol: session.db.Protocol,
+				DatabaseURI:      session.db.URI,
+				DatabaseName:     session.dbName,
+				DatabaseUser:     session.dbUser,
 			},
-			Query: query,
+			DatabaseQuery: query,
 		})
 	}
 }
