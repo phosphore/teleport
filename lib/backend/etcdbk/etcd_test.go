@@ -384,6 +384,11 @@ func TestCompareAndSwapOversizedValue(t *testing.T) {
 		"dial_timeout":                   500 * time.Millisecond,
 		"etcd_max_client_msg_size_bytes": maxClientMsgSize,
 	})
+	if err != nil && (strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "context deadline exceeded")) {
+		t.Logf("WARNING: etcd cluster is not available: %v.", err)
+		t.Logf("WARNING: Start examples/etcd/start-etcd.sh.")
+		t.Skip(err.Error())
+	}
 	require.NoError(t, err)
 	prefix := test.MakePrefix()
 	// Explicitly exceed the message size
