@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package db
+package session
 
 import (
 	"fmt"
@@ -25,26 +25,26 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// sessionContext contains information about a database session.
-type sessionContext struct {
-	// id is the unique session id.
-	id string
-	// db is the database instance information.
-	db services.DatabaseServer
-	// identity is the identity of the connecting teleport user.
-	identity tlsca.Identity
-	// checker is the access checker for the identity
-	checker services.AccessChecker
-	// dbUser is the requested database user.
-	dbUser string
-	// dbName is the requested database name.
-	dbName string
-	// log is the logger with session specific fields.
-	log logrus.FieldLogger
+// Context combines parameters for a database connection session.
+type Context struct {
+	// ID is the unique session ID.
+	ID string
+	// Server is the database server handling the connection.
+	Server services.DatabaseServer
+	// Identity is the identity of the connecting Teleport user.
+	Identity tlsca.Identity
+	// Checker is the access checker for the identity.
+	Checker services.AccessChecker
+	// DatabaseUser is the requested database user.
+	DatabaseUser string
+	// DatabaseName is the requested database name.
+	DatabaseName string
+	// Log is the logger with session specific fields.
+	Log logrus.FieldLogger
 }
 
 // String returns string representation of the session parameters.
-func (c *sessionContext) String() string {
+func (c *Context) String() string {
 	return fmt.Sprintf("db[%v] identity[%v] dbUser[%v] dbName[%v]",
-		c.db.GetDatabaseName(), c.identity.Username, c.dbUser, c.dbName)
+		c.Server.GetDatabaseName(), c.Identity.Username, c.DatabaseUser, c.DatabaseName)
 }

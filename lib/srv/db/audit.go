@@ -26,7 +26,8 @@ import (
 	"github.com/gravitational/teleport/lib/events"
 	"github.com/gravitational/teleport/lib/events/filesessions"
 	"github.com/gravitational/teleport/lib/services"
-	"github.com/gravitational/teleport/lib/session"
+	libsession "github.com/gravitational/teleport/lib/session"
+	"github.com/gravitational/teleport/lib/srv/db/session"
 	"github.com/gravitational/teleport/lib/utils"
 
 	"github.com/gravitational/trace"
@@ -34,14 +35,14 @@ import (
 
 // newStreamWriter creates a streamer that will be used to stream the
 // requests that occur within this session to the audit log.
-func (s *Server) newStreamWriter(sessionCtx *sessionContext) (events.StreamWriter, error) {
+func (s *Server) newStreamWriter(sessionCtx *session.Context) (events.StreamWriter, error) {
 	clusterConfig, err := s.AccessPoint.GetClusterConfig()
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 	// TODO(r0mant): Add support for record-at-proxy.
 	// Create a sync or async streamer depending on configuration of cluster.
-	streamer, err := s.newStreamer(s.closeContext, sessionCtx.id, clusterConfig)
+	streamer, err := s.newStreamer(s.closeContext, sessionCtx.ID, clusterConfig)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -51,9 +52,9 @@ func (s *Server) newStreamWriter(sessionCtx *sessionContext) (events.StreamWrite
 		Context:      s.closeContext,
 		Streamer:     streamer,
 		Clock:        s.Clock,
-		SessionID:    session.ID(sessionCtx.id),
+		SessionID:    libsession.ID(sessionCtx.ID),
 		Namespace:    defaults.Namespace,
-		ServerID:     sessionCtx.db.GetHostID(),
+		ServerID:     sessionCtx.Server.GetHostID(),
 		RecordOutput: clusterConfig.GetSessionRecording() != services.RecordOff,
 		Component:    teleport.ComponentDB,
 	})
@@ -93,29 +94,29 @@ func (s *Server) newStreamer(ctx context.Context, sessionID string, clusterConfi
 
 // emitSessionStartEventFn returns function that uses the provided emitter to
 // emit an audit event when database session starts.
-func (s *Server) emitSessionStartEventFn(streamWriter events.StreamWriter) func(sessionContext) error {
-	return func(session sessionContext) error {
+func (s *Server) emitSessionStartEventFn(streamWriter events.StreamWriter) func(session.Context) error {
+	return func(session session.Context) error {
 		return streamWriter.EmitAuditEvent(s.closeContext, &events.DatabaseSessionStart{
 			Metadata: events.Metadata{
 				Type: events.DatabaseSessionStartEvent,
 				Code: events.DatabaseSessionStartCode,
 			},
 			ServerMetadata: events.ServerMetadata{
-				ServerID:        session.db.GetHostID(),
+				ServerID:        session.Server.GetHostID(),
 				ServerNamespace: defaults.Namespace,
 			},
 			UserMetadata: events.UserMetadata{
-				User: session.identity.Username,
+				User: session.Identity.Username,
 			},
 			SessionMetadata: events.SessionMetadata{
-				SessionID: session.id,
+				SessionID: session.ID,
 			},
 			DatabaseMetadata: &events.DatabaseMetadata{
-				DatabaseService:  session.db.GetDatabaseName(),
-				DatabaseProtocol: session.db.GetProtocol(),
-				DatabaseURI:      session.db.GetURI(),
-				DatabaseName:     session.dbName,
-				DatabaseUser:     session.dbUser,
+				DatabaseService:  session.Server.GetDatabaseName(),
+				DatabaseProtocol: session.Server.GetProtocol(),
+				DatabaseURI:      session.Server.GetURI(),
+				DatabaseName:     session.DatabaseName,
+				DatabaseUser:     session.DatabaseUser,
 			},
 		})
 	}
@@ -123,25 +124,25 @@ func (s *Server) emitSessionStartEventFn(streamWriter events.StreamWriter) func(
 
 // emitSessionEndEventFn returns function that uses the provided emitter to
 // emit an audit event when database session ends.
-func (s *Server) emitSessionEndEventFn(streamWriter events.StreamWriter) func(sessionContext) error {
-	return func(session sessionContext) error {
+func (s *Server) emitSessionEndEventFn(streamWriter events.StreamWriter) func(session.Context) error {
+	return func(session session.Context) error {
 		return streamWriter.EmitAuditEvent(s.closeContext, &events.DatabaseSessionEnd{
 			Metadata: events.Metadata{
 				Type: events.DatabaseSessionEndEvent,
 				Code: events.DatabaseSessionEndCode,
 			},
 			UserMetadata: events.UserMetadata{
-				User: session.identity.Username,
+				User: session.Identity.Username,
 			},
 			SessionMetadata: events.SessionMetadata{
-				SessionID: session.id,
+				SessionID: session.ID,
 			},
 			DatabaseMetadata: &events.DatabaseMetadata{
-				DatabaseService:  session.db.GetDatabaseName(),
-				DatabaseProtocol: session.db.GetProtocol(),
-				DatabaseURI:      session.db.GetURI(),
-				DatabaseName:     session.dbName,
-				DatabaseUser:     session.dbUser,
+				DatabaseService:  session.Server.GetDatabaseName(),
+				DatabaseProtocol: session.Server.GetProtocol(),
+				DatabaseURI:      session.Server.GetURI(),
+				DatabaseName:     session.DatabaseName,
+				DatabaseUser:     session.DatabaseUser,
 			},
 		})
 	}
@@ -149,25 +150,25 @@ func (s *Server) emitSessionEndEventFn(streamWriter events.StreamWriter) func(se
 
 // emitQueryEventFn returns function that uses the provided emitter to emit
 // an audit event when a database query is executed.
-func (s *Server) emitQueryEventFn(streamWriter events.StreamWriter) func(sessionContext, string) error {
-	return func(session sessionContext, query string) error {
+func (s *Server) emitQueryEventFn(streamWriter events.StreamWriter) func(session.Context, string) error {
+	return func(session session.Context, query string) error {
 		return streamWriter.EmitAuditEvent(s.closeContext, &events.DatabaseQuery{
 			Metadata: events.Metadata{
 				Type: events.DatabaseQueryEvent,
 				Code: events.DatabaseQueryCode,
 			},
 			UserMetadata: events.UserMetadata{
-				User: session.identity.Username,
+				User: session.Identity.Username,
 			},
 			SessionMetadata: events.SessionMetadata{
-				SessionID: session.id,
+				SessionID: session.ID,
 			},
 			DatabaseMetadata: &events.DatabaseMetadata{
-				DatabaseService:  session.db.GetDatabaseName(),
-				DatabaseProtocol: session.db.GetProtocol(),
-				DatabaseURI:      session.db.GetURI(),
-				DatabaseName:     session.dbName,
-				DatabaseUser:     session.dbUser,
+				DatabaseService:  session.Server.GetDatabaseName(),
+				DatabaseProtocol: session.Server.GetProtocol(),
+				DatabaseURI:      session.Server.GetURI(),
+				DatabaseName:     session.DatabaseName,
+				DatabaseUser:     session.DatabaseUser,
 			},
 			DatabaseQuery: query,
 		})

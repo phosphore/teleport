@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package db
+package postgres
 
 import (
 	"crypto/tls"
@@ -29,28 +29,28 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// PostgresServerConfig is the test Postgres server configuration.
-type PostgresServerConfig struct {
+// TestServerConfig is the test Postgres server configuration.
+type TestServerConfig struct {
 	// TLSConfig is the server TLS config.
 	TLSConfig *tls.Config
 }
 
-// PostgresServer is a test Postgres server used in functional database
+// TestServer is a test Postgres server used in functional database
 // access tests.
 //
 // It supports a very small subset of Postgres wire protocol that can:
 //   - Accept a TLS connection from Postgres client.
-//   - Reply with the same fakeQueryResponse to every query the client sends.
+//   - Reply with the same TestQueryResponse to every query the client sends.
 //   - Recognize terminate messages from clients closing connections.
-type PostgresServer struct {
+type TestServer struct {
 	listener  net.Listener
 	port      string
 	tlsConfig *tls.Config
 	log       logrus.FieldLogger
 }
 
-// NewPostgresServer returns a new instance of a test Postgres server.
-func NewPostgresServer(config PostgresServerConfig) (*PostgresServer, error) {
+// NewTestServer returns a new instance of a test Postgres server.
+func NewTestServer(config TestServerConfig) (*TestServer, error) {
 	listener, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -59,7 +59,7 @@ func NewPostgresServer(config PostgresServerConfig) (*PostgresServer, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	return &PostgresServer{
+	return &TestServer{
 		listener:  listener,
 		port:      port,
 		tlsConfig: config.TLSConfig,
@@ -68,9 +68,9 @@ func NewPostgresServer(config PostgresServerConfig) (*PostgresServer, error) {
 }
 
 // Serve starts serving client connections.
-func (s *PostgresServer) Serve() error {
-	s.log.Debug("Starting fake Postgres server.")
-	defer s.log.Debug("Fake Postgres server stopped.")
+func (s *TestServer) Serve() error {
+	s.log.Debug("Starting test Postgres server.")
+	defer s.log.Debug("Test Postgres server stopped.")
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
@@ -93,7 +93,7 @@ func (s *PostgresServer) Serve() error {
 	}
 }
 
-func (s *PostgresServer) handleConnection(conn net.Conn) error {
+func (s *TestServer) handleConnection(conn net.Conn) error {
 	// First message we expect is SSLRequest.
 	client, err := s.startTLS(conn)
 	if err != nil {
@@ -125,7 +125,7 @@ func (s *PostgresServer) handleConnection(conn net.Conn) error {
 	}
 }
 
-func (s *PostgresServer) startTLS(conn net.Conn) (*pgproto3.Backend, error) {
+func (s *TestServer) startTLS(conn net.Conn) (*pgproto3.Backend, error) {
 	client := pgproto3.NewBackend(pgproto3.NewChunkReader(conn), conn)
 	startupMessage, err := client.ReceiveStartupMessage()
 	if err != nil {
@@ -144,7 +144,7 @@ func (s *PostgresServer) startTLS(conn net.Conn) (*pgproto3.Backend, error) {
 	return pgproto3.NewBackend(pgproto3.NewChunkReader(conn), conn), nil
 }
 
-func (s *PostgresServer) handleStartup(client *pgproto3.Backend) error {
+func (s *TestServer) handleStartup(client *pgproto3.Backend) error {
 	startupMessage, err := client.ReceiveStartupMessage()
 	if err != nil {
 		return trace.Wrap(err)
@@ -163,11 +163,11 @@ func (s *PostgresServer) handleStartup(client *pgproto3.Backend) error {
 	return nil
 }
 
-func (s *PostgresServer) handleQuery(client *pgproto3.Backend, query *pgproto3.Query) error {
+func (s *TestServer) handleQuery(client *pgproto3.Backend, query *pgproto3.Query) error {
 	messages := []pgproto3.BackendMessage{
-		&pgproto3.RowDescription{Fields: fakeQueryResponse.FieldDescriptions},
-		&pgproto3.DataRow{Values: fakeQueryResponse.Rows[0]},
-		&pgproto3.CommandComplete{CommandTag: fakeQueryResponse.CommandTag},
+		&pgproto3.RowDescription{Fields: TestQueryResponse.FieldDescriptions},
+		&pgproto3.DataRow{Values: TestQueryResponse.Rows[0]},
+		&pgproto3.CommandComplete{CommandTag: TestQueryResponse.CommandTag},
 		&pgproto3.ReadyForQuery{},
 	}
 	for _, message := range messages {
@@ -181,17 +181,17 @@ func (s *PostgresServer) handleQuery(client *pgproto3.Backend, query *pgproto3.Q
 }
 
 // Port returns the port server is listening on.
-func (s *PostgresServer) Port() string {
+func (s *TestServer) Port() string {
 	return s.port
 }
 
 // Close closes the server listener.
-func (s *PostgresServer) Close() error {
+func (s *TestServer) Close() error {
 	return s.listener.Close()
 }
 
-// fakeQueryResponse is the response fake Postgres server sends to every query.
-var fakeQueryResponse = &pgconn.Result{
+// TestQueryResponse is the response test Postgres server sends to every query.
+var TestQueryResponse = &pgconn.Result{
 	FieldDescriptions: []pgproto3.FieldDescription{{Name: []byte("test-field")}},
 	Rows:              [][][]byte{{[]byte("test-value")}},
 	CommandTag:        pgconn.CommandTag("select 1"),

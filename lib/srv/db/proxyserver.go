@@ -30,6 +30,7 @@ import (
 	"github.com/gravitational/teleport/lib/multiplexer"
 	"github.com/gravitational/teleport/lib/reversetunnel"
 	"github.com/gravitational/teleport/lib/services"
+	"github.com/gravitational/teleport/lib/srv/db/postgres"
 	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
 
@@ -37,18 +38,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// ProxyServer is responsible to accepting connections coming from the
-// database clients (via a multiplexer) and dispatching them to the
-// appropriate database services over reverse tunnel.
+// ProxyServer runs inside Teleport proxy and is responsible to accepting
+// connections coming from the database clients (via a multiplexer) and
+// dispatching them to appropriate database services over reverse tunnel.
 type ProxyServer struct {
-	// ProxyServerConfig is the proxy configuration.
+	// ProxyServerConfig is the proxy server configuration.
 	ProxyServerConfig
-	// FieldLogger is used for logging.
-	logrus.FieldLogger
 	// middleware extracts identity information from client certificates.
 	middleware *auth.Middleware
 	// closeCtx is closed when the process shuts down.
 	closeCtx context.Context
+	// log is used for logging.
+	log logrus.FieldLogger
 }
 
 // ProxyServerConfig is the proxy configuration.
@@ -92,23 +93,23 @@ func NewProxyServer(ctx context.Context, config ProxyServerConfig) (*ProxyServer
 	}
 	server := &ProxyServer{
 		ProxyServerConfig: config,
-		FieldLogger:       logrus.WithField(trace.Component, "db:proxy"),
 		middleware: &auth.Middleware{
 			AccessPoint: config.AccessPoint,
 		},
 		closeCtx: ctx,
+		log:      logrus.WithField(trace.Component, "db:proxy"),
 	}
 	// TODO(r0mant): Copy TLS config?
 	server.TLSConfig.ClientAuth = tls.RequireAndVerifyClientCert
 	server.TLSConfig.GetConfigForClient = getConfigForClient(
-		server.TLSConfig, server.AccessPoint, server.FieldLogger)
+		server.TLSConfig, server.AccessPoint, server.log)
 	return server, nil
 }
 
 // Serve starts accepting database connections from the provided listener.
 func (s *ProxyServer) Serve(listener net.Listener) error {
-	s.Debug("Started database proxy.")
-	defer s.Debug("Database proxy exited.")
+	s.log.Debug("Started database proxy.")
+	defer s.log.Debug("Database proxy exited.")
 	for {
 		// Accept the connection from the database client, such as psql.
 		// The connection is expected to come through via multiplexer.
@@ -118,43 +119,50 @@ func (s *ProxyServer) Serve(listener net.Listener) error {
 			if trace.IsConnectionProblem(err) {
 				return trace.Wrap(err)
 			}
-			s.WithError(err).Errorf("Failed to accept client connection.")
+			s.log.WithError(err).Errorf("Failed to accept client connection.")
 			continue
 		}
 		// The multiplexed connection contains information about detected
 		// protocol so dispatch to the appropriate proxy.
 		proxy, err := s.dispatch(clientConn)
 		if err != nil {
-			s.WithError(err).Error("Failed to dispatch client connection.")
+			s.log.WithError(err).Error("Failed to dispatch client connection.")
 			continue
 		}
 		// Let the appropriate proxy handle the connection and go back
 		// to listening.
 		go func() {
 			defer clientConn.Close()
-			err := proxy.handleConnection(s.closeCtx, clientConn)
+			err := proxy.HandleConnection(s.closeCtx, clientConn)
 			if err != nil {
-				s.Errorf("Failed to handle client connection: %v.",
+				s.log.Errorf("Failed to handle client connection: %v.",
 					trace.DebugReport(err))
 			}
 		}()
 	}
 }
 
+// DatabaseProxy defines an interface a database proxy should implement.
+type DatabaseProxy interface {
+	// HandleConnection takes the client connection, handles all database
+	// specific startup actions and starts proxying to remote server.
+	HandleConnection(context.Context, net.Conn) error
+}
+
 // dispatch dispatches the connection to appropriate database proxy.
-func (s *ProxyServer) dispatch(clientConn net.Conn) (databaseProxy, error) {
+func (s *ProxyServer) dispatch(clientConn net.Conn) (DatabaseProxy, error) {
 	muxConn, ok := clientConn.(*multiplexer.Conn)
 	if !ok {
 		return nil, trace.BadParameter("expected multiplexer connection, got %T", clientConn)
 	}
 	switch muxConn.Protocol() {
 	case multiplexer.ProtoPostgres:
-		s.Debugf("Accepted Postgres connection from %v.", muxConn.RemoteAddr())
-		return &postgresProxy{
-			tlsConfig:     s.TLSConfig,
-			middleware:    s.middleware,
-			connectToSite: s.connectToSite,
-			log:           s.FieldLogger,
+		s.log.Debugf("Accepted Postgres connection from %v.", muxConn.RemoteAddr())
+		return &postgres.Proxy{
+			TLSConfig:     s.TLSConfig,
+			Middleware:    s.middleware,
+			ConnectToSite: s.connectToSite,
+			Log:           s.log,
 		}, nil
 	}
 	return nil, trace.BadParameter("unsupported database protocol %q",
@@ -210,12 +218,12 @@ func (s *ProxyServer) authorize(ctx context.Context) (*proxyContext, error) {
 		return nil, trace.Wrap(err)
 	}
 	identity := authContext.Identity.GetIdentity()
-	s.Debugf("Client identity: %#v.", identity)
+	s.log.Debugf("Client identity: %#v.", identity)
 	site, server, err := s.pickDatabaseServer(ctx, identity)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	s.Debugf("Will proxy to database %q on server %s.", server.GetDatabaseName(), server)
+	s.log.Debugf("Will proxy to database %q on server %s.", server.GetDatabaseName(), server)
 	return &proxyContext{
 		identity: identity,
 		site:     site,
@@ -238,7 +246,7 @@ func (s *ProxyServer) pickDatabaseServer(ctx context.Context, identity tlsca.Ide
 	if err != nil {
 		return nil, nil, trace.Wrap(err)
 	}
-	s.Debugf("Available database servers on %v: %s.", site.GetName(), servers)
+	s.log.Debugf("Available database servers on %v: %s.", site.GetName(), servers)
 	// Find out which database servers proxy the database a user is
 	// connecting to using routing information from identity.
 	for _, server := range servers {
@@ -279,7 +287,7 @@ func (s *ProxyServer) getConfigForServer(ctx context.Context, identity tlsca.Ide
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	s.Debug("Generated database certificate.")
+	s.log.Debug("Generated database certificate.")
 	pool := x509.NewCertPool()
 	for _, caCert := range response.CACerts {
 		ok := pool.AppendCertsFromPEM(caCert)

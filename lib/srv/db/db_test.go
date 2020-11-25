@@ -34,6 +34,7 @@ import (
 	"github.com/gravitational/teleport/lib/multiplexer"
 	"github.com/gravitational/teleport/lib/reversetunnel"
 	"github.com/gravitational/teleport/lib/services"
+	"github.com/gravitational/teleport/lib/srv/db/postgres"
 	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
 
@@ -161,7 +162,7 @@ func TestDatabaseAccess(t *testing.T) {
 				// Execute a query.
 				result, err := pgConn.Exec(ctx, "select 1").ReadAll()
 				require.NoError(t, err)
-				require.Equal(t, []*pgconn.Result{fakeQueryResponse}, result)
+				require.Equal(t, []*pgconn.Result{postgres.TestQueryResponse}, result)
 
 				// Disconnect.
 				err = pgConn.Close(ctx)
@@ -176,7 +177,7 @@ type testContext struct {
 	tlsServer      *auth.TestTLSServer
 	authServer     *auth.Server
 	authClient     *auth.Client
-	postgresServer *PostgresServer
+	postgresServer *postgres.TestServer
 	proxyServer    *ProxyServer
 	mux            *multiplexer.Mux
 	proxyConn      chan (net.Conn)
@@ -298,7 +299,7 @@ func setupTestContext(ctx context.Context, t *testing.T) *testContext {
 }
 
 // setupPostgresServer creates a fake Postgres server to be used in tests.
-func setupPostgresServer(ctx context.Context, t *testing.T, authClient *auth.Client) *PostgresServer {
+func setupPostgresServer(ctx context.Context, t *testing.T, authClient *auth.Client) *postgres.TestServer {
 	key, err := client.NewKey()
 	require.NoError(t, err)
 	csr, err := tlsca.GenerateCertificateRequestPEM(pkix.Name{CommonName: "localhost"}, key.Priv)
@@ -316,7 +317,7 @@ func setupPostgresServer(ctx context.Context, t *testing.T, authClient *auth.Cli
 	for _, ca := range resp.CACerts {
 		require.True(t, pool.AppendCertsFromPEM(ca))
 	}
-	postgresServer, err := NewPostgresServer(PostgresServerConfig{
+	postgresServer, err := postgres.NewTestServer(postgres.TestServerConfig{
 		TLSConfig: &tls.Config{
 			ClientCAs:    pool,
 			Certificates: []tls.Certificate{cert},

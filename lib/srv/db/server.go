@@ -29,10 +29,12 @@ import (
 	"github.com/gravitational/teleport/lib/labels"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/srv"
+	"github.com/gravitational/teleport/lib/srv/db/postgres"
+	"github.com/gravitational/teleport/lib/srv/db/session"
 	"github.com/gravitational/teleport/lib/utils"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
+	awssession "github.com/aws/aws-sdk-go/aws/session"
 	"github.com/gravitational/trace"
 	"github.com/jonboulle/clockwork"
 	"github.com/pborman/uuid"
@@ -108,8 +110,8 @@ func (c *Config) CheckAndSetDefaults() error {
 		return trace.BadParameter("heartbeat missing")
 	}
 	if c.Credentials == nil {
-		session, err := session.NewSessionWithOptions(session.Options{
-			SharedConfigState: session.SharedConfigEnable,
+		session, err := awssession.NewSessionWithOptions(awssession.Options{
+			SharedConfigState: awssession.SharedConfigEnable,
 		})
 		if err != nil {
 			return trace.Wrap(err)
@@ -331,7 +333,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) error {
 			// continues beyond the session lifetime.
 			err := streamWriter.Close(s.closeContext)
 			if err != nil {
-				sessionCtx.log.WithError(err).Warn("Failed to close stream writer.")
+				sessionCtx.Log.WithError(err).Warn("Failed to close stream writer.")
 			}
 		}()
 	}()
@@ -339,33 +341,41 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) error {
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	err = engine.handleConnection(ctx, sessionCtx, conn)
+	err = engine.HandleConnection(ctx, sessionCtx, conn)
 	if err != nil {
 		return trace.Wrap(err)
 	}
 	return nil
 }
 
+// DatabaseEngine defines an interface for specific database protocol engine
+// such as postgres or mysql.
+type DatabaseEngine interface {
+	// HandleConnection takes the connection from the proxy and starts
+	// proxying it to the particular database instance.
+	HandleConnection(context.Context, *session.Context, net.Conn) error
+}
+
 // dispatch returns an appropriate database engine for the session.
-func (s *Server) dispatch(sessionCtx *sessionContext, streamWriter events.StreamWriter) (databaseEngine, error) {
-	switch sessionCtx.db.GetProtocol() {
+func (s *Server) dispatch(sessionCtx *session.Context, streamWriter events.StreamWriter) (DatabaseEngine, error) {
+	switch sessionCtx.Server.GetProtocol() {
 	case defaults.ProtocolPostgres:
-		return &postgresEngine{
-			authClient:     s.AuthClient,
-			credentials:    s.Credentials,
-			rdsCACerts:     s.rdsCACerts,
-			onSessionStart: s.emitSessionStartEventFn(streamWriter),
-			onSessionEnd:   s.emitSessionEndEventFn(streamWriter),
-			onQuery:        s.emitQueryEventFn(streamWriter),
-			clock:          s.Clock,
-			log:            sessionCtx.log,
+		return &postgres.Engine{
+			AuthClient:     s.AuthClient,
+			Credentials:    s.Credentials,
+			RDSCACerts:     s.rdsCACerts,
+			OnSessionStart: s.emitSessionStartEventFn(streamWriter),
+			OnSessionEnd:   s.emitSessionEndEventFn(streamWriter),
+			OnQuery:        s.emitQueryEventFn(streamWriter),
+			Clock:          s.Clock,
+			Log:            sessionCtx.Log,
 		}, nil
 	}
 	return nil, trace.BadParameter("unsupported database procotol %q",
-		sessionCtx.db.GetProtocol())
+		sessionCtx.Server.GetProtocol())
 }
 
-func (s *Server) authorize(ctx context.Context) (*sessionContext, error) {
+func (s *Server) authorize(ctx context.Context) (*session.Context, error) {
 	// Only allow local and remote identities to proxy to a database.
 	userType := ctx.Value(auth.ContextUser)
 	switch userType.(type) {
@@ -381,22 +391,23 @@ func (s *Server) authorize(ctx context.Context) (*sessionContext, error) {
 	identity := authContext.Identity.GetIdentity()
 	s.Debugf("Client identity: %#v.", identity)
 	// Fetch the requested database server.
-	var db services.DatabaseServer
-	for _, server := range s.Servers {
-		if server.GetDatabaseName() == identity.RouteToDatabase.ServiceName {
-			db = server
+	var server services.DatabaseServer
+	for _, s := range s.Servers {
+		if s.GetDatabaseName() == identity.RouteToDatabase.ServiceName {
+			server = s
 		}
 	}
-	s.Debugf("Will connect to database %q at %v.", db.GetDatabaseName(), db.GetURI())
+	s.Debugf("Will connect to database %q at %v.", server.GetDatabaseName(),
+		server.GetURI())
 	id := uuid.New()
-	return &sessionContext{
-		id:       id,
-		db:       db,
-		identity: identity,
-		checker:  authContext.Checker,
-		log: s.WithFields(logrus.Fields{
+	return &session.Context{
+		ID:       id,
+		Server:   server,
+		Identity: identity,
+		Checker:  authContext.Checker,
+		Log: s.WithFields(logrus.Fields{
 			"id": id,
-			"db": db.GetDatabaseName(),
+			"db": server.GetDatabaseName(),
 		}),
 	}, nil
 }
